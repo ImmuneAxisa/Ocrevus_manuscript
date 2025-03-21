@@ -1,0 +1,354 @@
+---
+title: "CSF ocrevus samples analysis: inspection of macrophage cluster enriched in treatment"
+author: "PPA"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: 
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    df_print: paged
+geometry: margin=0.5in
+header-includes:
+   - \usepackage{subfig}
+   - \usepackage{float}
+---
+
+
+
+```{r setup, include=FALSE}
+
+##########################
+## Packages and options ##
+##########################
+
+library(gridExtra)
+library(knitr)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(stringr)
+library(ggplot2)
+library(ggExtra)
+library(stats)
+# library(RColorBrewer)
+library(viridis)
+library(scales)
+library(ggrepel)
+library(circlize)
+library(RColorBrewer)
+library(gplots)
+library(cowplot)
+library(gtable)
+library(data.table)
+library(Seurat)
+library(hdf5r)
+library(ggsci)
+library(ggridges)
+library(forcats)
+library(kableExtra)
+library(sp)
+# library(FactoMineR)
+# library(factoextra)
+library(wesanderson)
+library(ComplexHeatmap)
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.pos = 'H')
+knitr::opts_chunk$set(dev = 'png', dpi = 300)
+
+#set root directory to be one level up of the current directory
+#knitr::opts_knit$set(root.dir = '.')
+
+#Caching option when tweaking the knitting
+knitr::opts_chunk$set(cache = T)
+
+WRITE_FILES <- FALSE
+
+
+##################
+## ggplot theme ##
+##################
+
+theme_mrl <- function(x = 1) {
+  theme_minimal() +
+    theme(
+      axis.line = element_line(),
+      axis.ticks.x = element_line(),
+      axis.ticks.y = element_line(),
+      axis.text.x = element_text(size = 12*x,face = "plain", angle = 40, vjust = 0.9, hjust=0.9, colour = "black"),
+      axis.text.y = element_text(size = 12*x,face = "plain", colour = "black"),
+      axis.title.x = element_text(size = 12*x,face = "bold"),
+      axis.title.y = element_text(size = 12*x,face = "bold"),
+      strip.background = element_rect(fill="gray20", colour="gray20", linetype="solid"),
+                                      strip.text = element_text(size=12*x, colour="white", face="bold"),
+                                      legend.title = element_text(size=14*x, face = "bold"),
+                                      legend.text = element_text(size=12*x, color="black", face="bold"),
+      legend.background = element_rect(fill = "transparent", colour = "transparent"),
+      plot.title =  element_text(hjust=0.5, vjust=2, face="bold"),
+      plot.subtitle = element_text(hjust=0.5, vjust=3, face="italic"),
+      plot.caption = element_text(hjust = 0, face = "italic")
+                                      )
+}
+
+
+opts <- options()  # save old options
+
+options(ggplot2.continuous.colour="viridis")
+options(ggplot2.continuous.fill = "viridis")
+
+
+palette <- c(pal_rickandmorty()(12),pal_jco()(10), pal_futurama()(11), pal_tron()(7))
+
+options(bitmapType = 'cairo', device = 'png')
+```
+
+
+There's a suspicion that the macrophage cluster has contamination of T cells in it. Is it really it or:
+* myeloid cells with T cell features (and vice versa)
+* doublets of T and myeloid
+* contamination by ambient RNA
+
+\pagebreak
+
+
+# Classification of T cell contaminants in the macrophage cluster
+
+\  
+
+
+```{r}
+seurat <- readRDS("./results/CSF_analysis/seurat_objects/merged.CSF_integrated_harmony_corrected_cluster.rds")
+
+pca <- seurat@reductions$harmony@cell.embeddings
+
+umap <- seurat@reductions$umap@cell.embeddings
+
+
+meta <- seurat@meta.data
+
+
+
+singleR_res_jess <- readRDS("./results/CSF_analysis/reductions/allcells_SingleR_SingleCellScore.rds")
+
+```
+
+
+
+## SingleR results per cell and clustering
+
+\  
+
+```{r, fig.width=10}
+
+Mo_barcodes <- meta %>%
+  tibble::rownames_to_column("index") %>%
+  dplyr::filter(cluster_label == "Mø") %>%
+  pull(index)
+
+
+singleR_Mo <- singleR_res_jess[Mo_barcodes,]
+
+
+singleR_Mo <- singleR_Mo / matrixStats::rowMaxs(singleR_Mo)
+
+
+hcluster <- singleR_Mo %>% dist() %>% hclust()
+
+annotation_cells <- data.frame(hcluster = as.factor(cutree(hcluster,2)),
+                               hcluster5 = as.factor(cutree(hcluster,5))) %>%
+  tibble::rownames_to_column("index") %>%
+  left_join(meta %>%
+              tibble::rownames_to_column("index") %>%
+              dplyr::select(index, SingleR.labels, nCount_RNA,nFeature_RNA, LP)
+    ) %>%
+  tibble::column_to_rownames("index") %>%
+  mutate(SingleR.labels = ifelse(grepl("Th|regu|help",SingleR.labels), "CD4",
+                                 ifelse(grepl("CD8",SingleR.labels), "CD8",
+                                        ifelse(grepl("B cells",SingleR.labels), "B cells",
+                                               ifelse(grepl("mono|Mye",SingleR.labels), "myeloid",
+                                                      SingleR.labels))))) %>%
+  mutate(nCount_RNA = log10(nCount_RNA),
+         nFeature_RNA = log10(nFeature_RNA))
+  
+
+Heatmap(
+  t(singleR_Mo),
+  col = c(viridis(1000), "red"),
+  show_column_names = F,
+  bottom_annotation = HeatmapAnnotation(
+    df = annotation_cells,
+    col = list(
+      nCount_RNA = colorRamp2(
+        quantile(annotation_cells$nCount_RNA, c(0.025, 0.975)),
+        c("white", "darkgreen")
+      ),
+      nFeature_RNA = colorRamp2(
+        quantile(annotation_cells$nFeature_RNA, c(0.025, 0.975)),
+        c("white", "darkorange2")
+      ),
+      LP = c(
+        Healthy = "grey",
+        Baseline = "red",
+        Follow_up = "royalblue"
+      )
+    )
+  )
+)
+
+```
+
+We can see that there is 2 lineages present in this cluster based on the singleR scores. And we can use hierarchical clustering on those scores to separate the 2 lineages.
+
+## Count and Feature on the clustered populations
+
+\  
+
+
+```{r}
+
+
+annotation_cells %>% 
+  gather("metric","value", -!matches("_RNA$")) %>%
+  ggplot(aes(hcluster, value)) +
+  geom_violin() +
+  facet_wrap(.~metric, scales = "free", strip.position = "left") +
+  theme_bw() +
+  theme(strip.placement = "outside",
+        axis.title.y = element_blank(),
+        strip.background = element_blank()) +
+  labs(caption = "log10 scale")
+
+annotation_cells %>% 
+  gather("metric","value", -!matches("_RNA$")) %>%
+  ggplot(aes(hcluster, 10^value)) +
+  geom_violin() +
+  facet_wrap(.~metric, scales = "free", strip.position = "left") +
+  theme_bw() +
+  theme(strip.placement = "outside",
+        axis.title.y = element_blank(),
+        strip.background = element_blank()) +
+  labs(caption = "linear scale")
+
+
+
+
+```
+
+As expected myeloid cells are more transcriptomically active and have larger library sizes on average.
+
+## look at euclidean distances for M-T cluster
+
+\  
+
+If there is truly 2 lineages in this cluster, each lineage should be closer to other cells from the same lineages by euclidean distance in PCA space.
+
+```{r}
+
+hcluster <- as.factor(cutree(hcluster, 2))
+
+meta_sampled <- meta %>%
+  tibble::rownames_to_column("index") %>%
+  left_join(data.frame(hcluster = hcluster) %>% tibble::rownames_to_column("index")) %>%
+  mutate(cluster_label = ifelse(cluster_label == "Mø", paste0(cluster_label, "_", hcluster), as.character(cluster_label))) %>%
+  dplyr::filter(grepl("Mø", cluster_label)) %>%
+  group_by(cluster_label, LP) %>%
+  summarize(count = n())
+
+meta_sampled <- meta %>%
+  tibble::rownames_to_column("index") %>%
+  left_join(data.frame(hcluster = hcluster) %>% tibble::rownames_to_column("index")) %>%
+  mutate(cluster_label = ifelse(cluster_label == "Mø", paste0(cluster_label, "_", hcluster), as.character(cluster_label))) %>%
+  group_by(Emulsion, cluster_label) %>%
+  sample_n(100, replace = T) %>%
+  ungroup() %>%
+  distinct()
+
+pca_sampled <- pca[meta_sampled$index,]
+
+distances <- dist(pca_sampled) %>% broom::tidy()
+
+distances <- distances %>%
+  left_join(meta_sampled %>% dplyr::select(item1 = index, cluster_label)) %>%
+  left_join(meta_sampled %>% dplyr::select(item2 = index, cluster_label_2 = cluster_label))
+
+distances_meta <- distances %>%
+  dplyr::filter(cluster_label == "Mø_1" | cluster_label_2 == "Mø_1") 
+
+distances_meta <- distances_meta %>%
+  unite("cluster", cluster_label, cluster_label_2) %>%
+  mutate(cluster = gsub("Mø_1", "", cluster))
+
+
+distances_meta <- distances_meta %>%
+  mutate(cluster = gsub("^_", "", cluster)) %>%
+  mutate(cluster = gsub("_$", "", cluster)) %>%
+  mutate(cluster = ifelse(cluster == "", "Mø_1", cluster))
+
+
+table(distances_meta$cluster)
+
+
+
+ggplot(distances_meta, aes(cluster, distance, fill = cluster == "Mø_1")) +
+  geom_violin(draw_quantiles = c(0.25,0.5,0.75)) +
+  theme_mrl() +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = c("grey","orange")) +
+  ggtitle("euclidean distances to cells in Mø_1 cluster, aka probable T cells")
+
+
+
+
+```
+
+
+```{r}
+
+
+
+distances_meta <- distances %>%
+  dplyr::filter(cluster_label == "Mø_2" | cluster_label_2 == "Mø_2") 
+
+distances_meta <- distances_meta %>%
+  unite("cluster", cluster_label, cluster_label_2, remove = F) %>%
+  mutate(cluster = gsub("Mø_2", "", cluster))
+
+
+distances_meta <- distances_meta %>%
+  mutate(cluster = gsub("^_", "", cluster)) %>%
+  mutate(cluster = gsub("_$", "", cluster)) %>%
+  mutate(cluster = ifelse(cluster == "", "Mø_2", cluster))
+
+
+table(distances_meta$cluster)
+
+rm(distances)
+
+ggplot(distances_meta, aes(cluster, distance, fill = cluster == "Mø_2")) +
+  geom_violin(draw_quantiles = c(0.25,0.5,0.75)) +
+  theme_mrl() +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = c("grey","orange")) +
+  ggtitle("euclidean distances to cells in Mø_2 cluster, aka true myeloid cells")
+```
+We can see that overall, as expected the T cells are closer to other T cell clusters, and similarly the macrophages are closer to other myeloid subsets. We'll thus rely on the present hierarchical clustering of the singleR scores to separate those 2 lineages and define 2 new clusters, based on the split of the dendrogram into 2 clusters.
+
+
+```{r, eval=T}
+
+
+# save seurat object with hierarchical clustering assignments
+
+meta <- meta %>%
+  tibble::rownames_to_column("index") %>%
+  left_join(data.frame(hcluster = hcluster) %>% tibble::rownames_to_column("index")) %>%
+  tibble::column_to_rownames("index")
+
+
+seurat@meta.data <- meta[colnames(seurat),]
+
+saveRDS(seurat, "results/CSF_analysis/seurat_objects/merged.CSF_integrated_harmony_corrected_cluster_hcluster.rds")
+```
+

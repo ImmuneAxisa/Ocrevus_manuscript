@@ -1,0 +1,291 @@
+---
+title: "CSF DC pDC open code"
+author: "Jessica Wei"
+date: "2024-12-29"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+
+
+#QC libraries
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(stringr)
+library(ggplot2)
+
+
+#library(RColorBrewer)
+library(viridis)
+library(scales)
+library(ggrepel)
+library(circlize)
+library(RColorBrewer)
+
+```
+
+## subset DC objects
+
+
+```{r}
+merged.CSF <- readRDS("results/CSF_analysis/seurat_objects/merged.CSF_integrated_harmony_corrected_cluster_hcluster.rds")
+
+merged.CSF <- subset(merged.CSF, is.na(hcluster)| hcluster=="2")
+
+table(merged.CSF@meta.data$cluster_label)
+
+#DC_1 cluster = 1423 cells
+Idents(merged.CSF) <- "cluster_label"
+dc1.srt <- subset(merged.CSF, idents = "DC_1")
+```
+
+
+## Read in noMacT CSF object and add metadata to dc1 object
+
+```{r}
+
+
+#add metadata 
+table(merged.CSF@meta.data$LP)
+table(dc1.srt@meta.data$LP)
+table(dc1.srt@meta.data$treatment)
+
+dc1_df <- as.data.frame(dc1.srt@meta.data)
+
+dc1_df <- dc1_df %>%
+  mutate(timepoint= case_when(treatment == "CSF" ~ "Control",
+                              treatment == "0M" ~ "Pre-Tx",
+                              treatment == "6M" ~ "Post-Tx",
+                              treatment == "12M" ~ "Post-Tx",
+                              treatment == "18M" ~ "Post-Tx"))
+
+dc1.srt@meta.data <- dc1_df
+
+
+```
+
+
+##check HLA expression
+
+```{r}
+
+hla2 <- list(c("HLA-DRA", "HLA-DRB1", "HLA-DQA1", "HLA-DQA2", "HLA-DQB1","HLA-DQB2", "HLA-DMA", "HLA-DMB", "HLA-DOA", "HLA-DPA1", "HLA-DPB1"))
+
+hla2_feat <- c("HLA-DRA", "HLA-DRB1",  "HLA-DQA1", "HLA-DQA2","HLA-DQB1","HLA-DQB2", "HLA-DMA", "HLA-DMB", "HLA-DOA", "HLA-DPA1", "HLA-DPB1")
+
+hla1 <- list(c("HLA-A", "HLA-B", "HLA-C", "HLA-E", "HLA-F","HLA-G"))
+
+hla1_feat <- c("HLA-A", "HLA-B", "HLA-C", "HLA-E", "HLA-F","HLA-G")
+
+VlnPlot(dc1.srt, features = hla2_feat, group.by = "LP", pt.size = 0)
+VlnPlot(dc1.srt, features = hla1_feat, group.by = "LP", pt.size = 0.5)
+
+dc1.srt <- AddModuleScore(dc1.srt, features = hla2, name = "hla2", seed = 1)
+dc1.srt <- AddModuleScore(dc1.srt, features = hla1, name = "hla1", seed = 1)
+
+dc1.srt$timepoint <- factor(x= dc1.srt$timepoint, levels = c("Pre-Tx", "Post-Tx", "Control"))
+
+
+pdf(file = "results/CSF_analysis/revision/DC_1_HLA_Vlnplot.pdf", width = 12, height = 8)
+supp_fig_dc1_a_class2 <-VlnPlot(dc1.srt, features = "hla21", group.by = "timepoint", pt.size = 0, cols = c("#a53708", "#CC7E0A", "#3eaeb2"))+ 
+  coord_flip()+
+  theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_blank()) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.1)+
+        NoLegend()+
+        ggtitle("DC_1 MHC Class II Module Score")
+
+supp_fig_dc1_a_class1 <- VlnPlot(dc1.srt, features = "hla11", group.by = "timepoint", pt.size = 0, cols = c("#a53708", "#CC7E0A", "#3eaeb2"))+ 
+  theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_blank()) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.1)+
+        NoLegend()+
+        coord_flip()+
+        ggtitle("DC_1 MHC Class I Module Score")
+dev.off()
+
+```
+
+## DC inflammatory genes
+
+excluding HLA-DR, HLA-DQA1, HLA-DQB1
+
+```{r}
+
+inflame <- c("CD74","CD86", "CD80", "CD40", "IFNG", "TNFA", "IL1B")
+
+VlnPlot(dc1.srt, features = inflame, group.by = "timepoint", pt.size = 0.1)
+
+supp_fig_dc1_b <- VlnPlot(dc1.srt, features = c("CD74", "CD86"), group.by = "timepoint", pt.size = 0, cols = c("#a53708", "#CC7E0A", "#3eaeb2"))& 
+  coord_flip()&
+  theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_blank()) &
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.1)&
+        NoLegend()
+
+pdf(file = "results/CSF_analysis/revision/DC_1_inflame_vlnplot.pdf")
+VlnPlot(dc1.srt, features = c("CD74", "CD86"), group.by = "timepoint", pt.size = 0)&
+  stat_summary(fun.data = mean_cl_normal, geom = "crossbar", width=0.2)
+
+VlnPlot(dc1.srt, features = c("CD80","CD40","CD154", "IFNG", "TNF", "IL1B", "IL12","CXCL9","CXCL10","CD209", "TNFSF4", "TNFSF9", "TNFSF13B","TNFSF13"), group.by = "timepoint", pt.size = 0.5)
+dev.off()
+
+pdf(file = "results/CSF_analysis/revision/DC_1_inflame_dotplot.pdf")
+supp_fig_dc1_c <- DotPlot(dc1.srt, features = c("CD40","CD80","IFNG", "TNF", "IL1B", "CXCL9","CXCL10","CD209", "TNFSF4", "TNFSF9"), group.by = "timepoint", cols = "RdYlBu")+
+  theme(axis.text.x=element_text(angle = 45, hjust=1, vjust=1))+
+  coord_flip()#CD154, IL12 no expression
+dev.off()
+
+VlnPlot(dc1.srt, features = c("CD40", "CD70", "IL12A", "CD134", "CD137"), group.by = "timepoint", pt.size = 0.1, cols = c("#a53708", "#CC7E0A", "#3eaeb2"))& 
+  coord_flip()&
+  theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_blank()) &
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.1)&
+        NoLegend()
+
+```
+
+
+#subset pDC
+
+```{r}
+
+pdc.srt <- subset(merged.CSF, idents = "pDC")
+
+```
+
+
+#Add metadata to pDC
+
+```{r}
+
+#add metadata 
+table(merged.CSF@meta.data$LP)
+table(pdc.srt@meta.data$LP)
+table(pdc.srt@meta.data$treatment)
+
+pdc_df <- as.data.frame(pdc.srt@meta.data)
+
+pdc_df <- pdc_df %>%
+  mutate(timepoint= case_when(treatment == "CSF" ~ "Control",
+                              treatment == "0M" ~ "Pre-Tx",
+                              treatment == "6M" ~ "Post-Tx",
+                              treatment == "12M" ~ "Post-Tx",
+                              treatment == "18M" ~ "Post-Tx"))
+
+pdc.srt@meta.data <- pdc_df
+
+```
+
+
+##check HLA expression
+
+```{r}
+
+
+hla2_feat <- c("HLA-DRA", "HLA-DRB1",  "HLA-DQA1", "HLA-DQA2","HLA-DQB1","HLA-DQB2", "HLA-DMA", "HLA-DMB", "HLA-DOA", "HLA-DPA1", "HLA-DPB1")
+
+hla1 <- list(c("HLA-A", "HLA-B", "HLA-C", "HLA-E", "HLA-F","HLA-G"))
+
+hla1_feat <- c("HLA-A", "HLA-B", "HLA-C", "HLA-E", "HLA-F","HLA-G")
+
+VlnPlot(pdc.srt, features = hla2_feat, group.by = "LP", pt.size = 0) #no HLA-DQB2 expression
+VlnPlot(pdc.srt, features = hla1_feat, group.by = "LP", pt.size = 0.5) #NO HLA-G expression
+
+hla2 <- list(c("HLA-DRA", "HLA-DRB1", "HLA-DQA1", "HLA-DQA2", "HLA-DQB1","HLA-DMA", "HLA-DMB", "HLA-DOA", "HLA-DPA1", "HLA-DPB1"))
+
+hla1 <- list(c("HLA-A", "HLA-B", "HLA-C", "HLA-E", "HLA-F"))
+
+pdc.srt <- AddModuleScore(pdc.srt, features = hla2, name = "hla2", seed = 1)
+pdc.srt <- AddModuleScore(pdc.srt, features = hla1, name = "hla1", seed = 1)
+
+pdc.srt$timepoint <- factor(x= pdc.srt$timepoint, levels = c("Pre-Tx", "Post-Tx", "Control"))
+
+
+pdf(file = "results/CSF_analysis/revision/pDC_HLA_Vlnplot.pdf", width = 12, height = 8)
+supp_fig_pdc_a_class2 <- VlnPlot(pdc.srt, features = "hla21", group.by = "timepoint", pt.size = 0, cols = c("#a53708", "#CC7E0A", "#3eaeb2"))+ 
+  theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_blank()) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.1)+
+        NoLegend()+
+        coord_flip()+
+        ggtitle("pDC MHC Class II Module Score")
+
+supp_fig_pdc_a_class1 <- VlnPlot(pdc.srt, features = "hla11", group.by = "timepoint", pt.size = 0, cols = c("#a53708", "#CC7E0A", "#3eaeb2"))+ 
+  theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_blank()) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.1)+
+        NoLegend()+
+        coord_flip()+
+        ggtitle("pDC MHC Class I Module Score")
+dev.off()
+
+```
+
+
+##pDC inflammatory genes
+
+```{r}
+
+inflame <- c("CD81","CD86", "CD80", "CD40", "IFNG", "TNFA", "IL1B", "IFNA","IFNB")
+
+VlnPlot(pdc.srt, features = inflame, group.by = "timepoint", pt.size = 0.5)
+
+pdf(file = "results/CSF_analysis/revision/pDC_inflame_vlnplot.pdf")
+VlnPlot(pdc.srt, features = c("GZMB", "TGFB1"), group.by = "timepoint", pt.size = 0)&
+  stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom = "crossbar", width= 0.2)
+
+VlnPlot(pdc.srt, features = c("TLR7", "TLR9"), group.by = "timepoint", pt.size = 0)&
+  stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom = "crossbar", width= 0.2)
+
+
+VlnPlot(pdc.srt, features = c("CD40","CD80","CD81","ICOSLG", "IDO1","CD86", "IFNG", "TNF", "IL6","IL12A","IFNA1", "IFNB1", "CCL8", "CCL10", "CCL3", "CCL4", "CCL5", "TNFSF10", "CD274", "CCR7"), group.by = "timepoint", pt.size = 0.5)
+dev.off()
+
+pdf(file = "results/CSF_analysis/revision/pDC_inflame_dotplot.pdf")
+DotPlot(pdc.srt, features = c("CD40","CD80","IFNG", "TNF", "IL1B", "CXCL9","CXCL10","CD209", "TNFSF10", "TNFSF9"), group.by = "timepoint", cols = "RdYlBu")+
+  theme(axis.text.x=element_text(angle = 45, hjust=1, vjust=1))+
+  coord_flip()
+#CD154, IL12 no expression
+
+supp_fig_pdc_b <- DotPlot(pdc.srt, features = c("CD40","CD80","CD81","CD86", "ICOSLG", "IDO1","IFNG", "TNF", "IL6","IL12A","IFNA1", "IFNB1", "CCL3", "CCL4", "CCL5", "CCL8", "CCL10","TNFSF10", "CD274"), group.by = "timepoint", cols = "RdYlBu")+
+  theme(axis.text.x=element_text(angle = 45, hjust=1, vjust=1))+
+  coord_flip()
+
+dev.off()
+
+supp_fig_pdc_b$data %>% select(pct.exp, id)
+
+RidgePlot(pdc.srt, features = "CD40", group.by = "timepoint", stack = FALSE, slot = "data")
+VlnPlot(pdc.srt, features = "CD40", group.by = "timepoint")
+
+
+
+```
+
+
+

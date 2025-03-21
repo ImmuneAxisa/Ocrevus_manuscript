@@ -1,0 +1,698 @@
+---
+title: "CSF DGE analysis reviewing discussions"
+output: html_document
+date: "2024-08-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+
+
+
+## load libraries
+
+library(gridExtra)
+library(knitr)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(stringr)
+library(ggplot2)
+library(ggExtra)
+library(stats)
+library(broom)
+# library(RColorBrewer)
+library(viridis)
+library(scales)
+library(ggrepel)
+library(circlize)
+library(RColorBrewer)
+library(gplots)
+library(cowplot)
+library(gtable)
+library(data.table)
+library(Seurat)
+library(hdf5r)
+library(ggsci)
+library(harmony)
+library(future.apply)
+library(speedglm)
+library(rslurm)
+library(DESeq2)
+library(patchwork)
+library(forcats)
+
+# function for building chunk of genes for //
+chunk2 <- function(x,n) split(x, cut(seq_along(x), n, labels = FALSE)) 
+
+options(bitmapType = 'cairo', device = 'png')
+
+theme_mrl <- function(x = 1) {
+  theme_minimal() +
+    theme(
+      axis.line = element_line(),
+      axis.ticks.x = element_line(),
+      axis.ticks.y = element_line(),
+      axis.text.x = element_text(size = 12*x,face = "bold", angle = 45, vjust = 0.9, hjust=0.9),
+      axis.text.y = element_text(size = 12*x,face = "bold"),
+      axis.title.x = element_text(size = 12*x,face = "bold"),
+      axis.title.y = element_text(size = 12*x,face = "bold"),
+      strip.background = element_rect(fill="gray20", colour="gray20", linetype="solid"),
+                                      strip.text = element_text(size=12*x, colour="white", face="bold"),
+                                      legend.title = element_text(size=14*x, face = "bold"),
+                                      legend.text = element_text(size=12*x, color="gray20", face="bold"),
+      legend.background = element_rect(fill = "transparent", colour = "transparent"),
+      plot.title =  element_text(hjust=0.5, vjust=2, face="bold"),
+      plot.subtitle = element_text(hjust=0.5, vjust=3, face="italic"),
+      plot.caption = element_text(hjust = 0, face = "italic")
+                                      )
+}
+
+
+
+
+```
+
+
+```{r}
+ash_shrinkage <- function(beta, se) {
+  
+  
+  
+  ashr::ash(beta, se, mixcompdist = "normal", method = "shrink")$result$PosteriorMean
+}
+
+
+set_overlap <- function(feat_list) {
+  
+  n_sets <- length(feat_list)
+  set_names <- names(feat_list)
+  #Allocate an empty matrix for similarity values. The size = number of genesets and col/row names = name of genesets.
+sim <- matrix(nrow =n_sets, ncol = n_sets, dimnames = list(set_names, set_names))
+
+# loop over the genesets to calculate how many genes overlap between genes, 
+#divided by the max overlap = size of the smaller of the 2 genesets compared.
+for(i in 1:n_sets) {
+  for(j in 1:n_sets) {
+  sim[j,i] <- length(intersect(feat_list[[j]], feat_list[[i]]))
+  }
+}
+  
+  
+  return(sim)
+}
+
+```
+
+
+
+```{r}
+
+
+#-----------
+# import data
+#-----------
+merged.seurat <- readRDS("./results/CSF_analysis/seurat_objects/merged.CSF_integrated_harmony_corrected_cluster_hcluster.rds")
+
+meta <- merged.seurat@meta.data
+
+GEX <- merged.seurat@assays$RNA@counts
+
+# and transpose because it's faster to subset columns
+GEX <- t(GEX)
+
+#########################################################
+################# meta data clusters ####################
+#########################################################
+
+
+meta <- meta %>% 
+  tibble::rownames_to_column("index") %>%
+  mutate(hcluster = as.character(hcluster)) %>%
+  mutate(hcluster = replace_na(hcluster, "")) %>%
+  mutate(cluster_label = paste0(cluster_label,hcluster)) %>% 
+  mutate(cluster_label = gsub("Mø","Mo",cluster_label))
+
+meta <- meta %>% 
+  separate(cluster_label, "main", sep = "_", remove = F, extra = "drop")
+
+meta <- meta %>%
+  dplyr::filter(cluster_label == "Mo2")
+```
+
+
+```{r, fig.width=10}
+GEX_filtered <- GEX[meta$index,] %>% t()
+
+identical(meta$index, colnames(GEX_filtered))
+
+
+rm(GEX, merged.seurat)
+gc()
+
+cpc <- Matrix::rowMeans(GEX_filtered)
+
+GEX_filtered <- GEX_filtered[cpc > 0.005,]
+```
+
+
+# Justification for poisson vs negative binomial
+
+```{r, fig.width=10}
+
+
+
+dds_global <- meta %>%
+  mutate(disease = Donor_Type,
+         Trt = ifelse(Donor_Type == "Healthy", "Baseline", LP)) %>%
+  group_by(disease) %>%
+  mutate(patient = paste0("ID",unclass(as.factor(patient)))) %>%
+  dplyr::select(index, disease, Trt, patient) %>%
+  tibble::column_to_rownames("index") %>%
+  DESeqDataSetFromMatrix(as.matrix(GEX_filtered)[,rownames(.)], .,
+                         ~1)
+
+
+
+
+#simulations
+Matrix::rowMeans(GEX_filtered)
+sim <- sapply(Matrix::rowMeans(GEX_filtered), \(x) rpois(ncol(GEX_filtered), x))
+
+sim <- t(sim)
+
+p1 <- data.frame(Means = Matrix::rowMeans(GEX_filtered),
+             Vars = rowVars(GEX_filtered)) %>%
+  mutate(disp = Vars / Means) %>%
+  ggplot(aes(Means, Vars)) +
+  geom_hex() +
+  scale_x_log10(labels = label_log()) +
+  scale_y_log10(labels = label_log()) +
+  geom_smooth(method = "lm", color = "red") +
+  geom_abline() +
+  theme_mrl() +
+  labs(title = "real data", x = "gene-wise mean", y = "gene-wise variance")
+
+
+
+
+p2 <- data.frame(Means = Matrix::rowMeans(sim),
+             Vars = rowVars(sim)) %>%
+  mutate(disp = Vars / Means) %>%
+  ggplot(aes(Means, Vars)) +
+  geom_hex() +
+  scale_x_log10(labels = label_log()) +
+  scale_y_log10(labels = label_log()) +
+  geom_smooth(method = "lm", color = "red") +
+  geom_abline() +
+  theme_mrl() +
+  labs(title = "simulated data", x = "gene-wise mean", y = "gene-wise variance")
+
+
+p1+p2+plot_layout(guides = "collect", axes = "collect")
+
+
+stat_test_overdispersion <- GEX_filtered %>%
+  t() %>%
+  apply(2, \(y) Rfast::poisdisp.test(y, alternative = "over", logged = TRUE)[2]) 
+
+
+stat_test_overdispersion_sim <- sim %>%
+  t() %>%
+  apply(2, \(y) Rfast::poisdisp.test(y, alternative = "over", logged = TRUE)[2]) 
+
+
+p3 <- data.frame("real" = stat_test_overdispersion,
+           "simulated" = stat_test_overdispersion_sim,
+           mean = Matrix::rowMeans(GEX_filtered)) %>%
+  pivot_longer(-mean, values_to = "pval") %>%
+  mutate(status = ifelse( pval < log(0.05), "overdispersed","not overdispersed")) %>%
+  mutate(status = replace_na(status, "low expression")) %>%
+  mutate(status = fct_rev(status)) %>%
+  ggplot(aes(name, fill =status)) +
+  geom_bar(position = "fill", color = "black") +
+  theme_mrl() +
+  labs(x = NULL, y = "gene fraction")
+
+p1+p2+p3+plot_layout(guides = "collect", axes = "collect", widths = c(2,2,0.5))
+
+```
+
+
+
+# build global negative binomial model for macrophage cluster
+
+```{r}
+#-------------------------------
+# build model matrix beforehand
+# to manually drop unused levels
+#-------------------------------
+mm <- model.matrix(~disease+disease:patient+disease:Trt, colData(dds_global))
+
+all.zero <- apply(mm, 2, function(x) all(x==0))
+idx <- which(all.zero)
+mm <- mm[,-idx]
+
+design(dds_global) <- mm
+
+colnames(mm)
+
+#--------------------------------------------
+# run full model to extract expression values
+#--------------------------------------------
+full_model <- DESeq(dds_global, fitType = "glmGamPoi",
+                        full = mm)
+
+#-------------------------------
+# get pre-post 
+#-------------------------------
+# as recommended we use the LRT test to get significance 
+results_pre_post_global <- DESeq(dds_global, fitType = "glmGamPoi", test = "LRT", 
+                        full = mm, reduced = mm[,colnames(mm) != "diseaseMS:TrtFollow_up"]) %>%
+  results(independentFiltering = TRUE) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("gene_name")
+
+# but we also at least want the size effect estimates
+results_pre_post_global <- full_model %>%
+  lfcShrink(coef = "diseaseMS.TrtFollow_up", type = "ashr") %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("gene_name") %>%
+  dplyr::select(gene_name, slfc = log2FoldChange) %>%
+  right_join(results_pre_post_global)
+
+
+#-------------------------------
+# get disease genes
+#-------------------------------
+# as recommended we use the LRT test to get significance 
+results_disease_global <- DESeq(dds_global, fitType = "glmGamPoi", test = "LRT", 
+                        full = mm, reduced = mm[,colnames(mm) != "diseaseMS"]) %>%
+  results(independentFiltering = TRUE) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("gene_name")
+
+# but we also at least want the size effect estimates
+results_disease_global <- full_model %>%
+  lfcShrink(coef = "diseaseMS", type = "ashr") %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("gene_name") %>%
+  dplyr::select(gene_name, slfc = log2FoldChange) %>%
+  right_join(results_disease_global)
+
+
+results_disease_global %>%
+  dplyr::filter(padj < 0.1)
+
+
+diff_genes <- bind_rows(results_disease_global, results_pre_post_global) %>%
+  dplyr::filter(padj < 0.1 & !grepl("^MT-|RP[LS]", gene_name)) %>%
+  pull(gene_name) %>%
+  unique()
+
+
+vsd <- DESeq(dds_global, fitType = "local",
+                        full = mm) %>%
+  varianceStabilizingTransformation(blind = FALSE, fitType = "local")
+
+degs <- assay(vsd)[diff_genes,]
+
+unwanted <- mm[,!colnames(mm) %in% c("(Intercept)", "diseaseMS", "diseaseMS:TrtFollow_up")]
+wanted <- mm[, colnames(mm) %in% c("diseaseMS", "diseaseMS:TrtFollow_up")]
+degs <- limma::removeBatchEffect(assay(vsd), 
+                         covariates = unwanted, 
+                         design = wanted)[diff_genes,]
+```
+
+
+```{r, fig.height=10, fig.width=5}
+library(ComplexHeatmap)
+
+annotation_col <- colData(vsd)[,1:2] %>% 
+              as.data.frame() %>%
+              mutate(Trt = ifelse(disease == "Healthy", NA, Trt))
+
+degs %>%
+  t() %>%
+  scale() %>%
+  t() %>%
+  Heatmap(col = colorRamp2(c(-2, 0, 2), c("darkblue", "grey90", "darkred")), 
+          show_column_names = FALSE, 
+          column_title = "overall dataset",
+          heatmap_legend_param = list(title = "z-score", legend_direction = "horizontal"),
+          clustering_distance_columns = "spearman",
+          clustering_method_columns = "ward.D",
+          bottom_annotation = columnAnnotation(
+            df = annotation_col,
+            col = list(disease = c("Healthy" = "darkgreen", "MS" = "orange3"),
+                       Trt = c("Baseline" = "pink3", "Follow_up" = "purple3")))) %>%
+  draw(merge_legend = TRUE,
+       heatmap_legend_side = "bottom", 
+    annotation_legend_side = "bottom")
+
+
+degs[,annotation_col$disease == "MS"] %>%
+  t() %>%
+  scale() %>%
+  t() %>%
+  Heatmap(col = colorRamp2(c(-2, 0, 2), c("darkblue", "grey90", "darkred")), 
+          show_column_names = FALSE, 
+          column_title = "Follow up vs Baseline",
+          heatmap_legend_param = list(title = "z-score", legend_direction = "horizontal"),
+          clustering_distance_columns = "spearman",
+          clustering_method_columns = "ward.D",
+          bottom_annotation = columnAnnotation(
+            df = annotation_col[annotation_col$disease == "MS",],
+            col = list(disease = c("Healthy" = "darkgreen", "MS" = "orange3"),
+                       Trt = c("Baseline" = "pink3", "Follow_up" = "purple3")))) %>%
+  draw(merge_legend = TRUE,
+       heatmap_legend_side = "bottom", 
+    annotation_legend_side = "bottom")
+```
+
+
+```{r, fig.asp=1.2, fig.width=4}
+
+gene_display <- c("VIM", "RAB11A", "ANXA1", "DAB2", "ITGB2", "CSF1R", "SLC11A1", "SDC3", 
+  "SAT1","ATP5F1E", "CCL4", "ZFP36", "CD83", "CCL3", "NDUFB1", "NDUFA13", "SOX4",
+  "COL6A3","EGR1","HIF1A","UQCRB","NDUFA3","ATP5ME", "ALDOA","ATP5MD",
+  "NDUFA11","NDUFA1", "CD74", "HLA-DRB1", "CST3", "CD14","CD63", "C1QC")
+
+MAplot <- results_pre_post_global %>%
+  mutate(cat = ifelse(padj < 0.1 & slfc > 0, "up", 
+                      ifelse(padj < 0.1 & slfc < 0, "dn", "ns"))) %>%
+  arrange(-pvalue) %>%
+  {
+    ggplot(., aes(baseMean,slfc)) +
+      geom_point(aes(color = cat)) +
+      theme_mrl()  +
+      stat_density2d(aes(fill = stat(level)), breaks = seq(1,10,0.1), geom = "polygon") +
+      scale_fill_gradient(low = "dark grey", high = "black") +
+      scale_y_continuous(limits = c(-1, 1), oob = squish) +
+      scale_x_log10(labels = label_log()) +
+      scale_color_manual(values = c(ns = "darkgrey", up = "red4", dn = "navy"), na.value = "darkgrey") +
+      geom_text_repel(
+        #data = . %>% dplyr::filter(gene %in% gene_display & cat == "dn"),
+        aes(label = ifelse(gene_name %in% gene_display & cat == "dn",gene_name, "")),
+        color = "navy",
+        alpha = 1,
+        force = 20,
+        force_pull = 1,
+        max.overlaps = 2000,
+        segment.size = 0.5,
+        min.segment.length = 0,
+        segment.color = "black",
+        ylim = c(NA, -0)
+      ) +
+      geom_point(
+        data = . %>% dplyr::filter(gene_name %in% gene_display & cat == "dn"),
+        shape = 21,
+        color = "black",
+        size = 2,
+        fill = "navy"
+      ) +
+      geom_text_repel(
+        #data = . %>% dplyr::filter(gene %in% gene_display & cat == "up"),
+        aes(label = ifelse(gene_name %in% gene_display & cat == "up",gene_name, "")),
+        color = "red4",
+        alpha = 1,
+        force = 20,
+        force_pull = 1,
+        max.overlaps = 2000,
+        segment.size = 0.5,
+        min.segment.length = 0,
+        segment.color = "black",
+        ylim = c(0,NA)
+      ) +
+      geom_point(
+        data = . %>% dplyr::filter(gene_name %in% gene_display & cat == "up"),
+        shape = 21,
+        color = "black",
+        size = 2,
+        fill = "red4"
+      ) +
+      labs(x = "log10 average gene expression", y = "shrunken Log Fold Change") +
+      theme(axis.text = element_text(color="black"),
+            legend.position = "none",
+            panel.border = element_rect(color ="black",fill=NA),
+            axis.line = element_blank())
+  }
+MAplot
+
+#ggsave2("reviewing/new_Fig2_panelA.pdf",MAplot, width = 4, height = 4*1.2)
+ggsave2("reviewing/new_Fig2_panelA.pdf",MAplot, width = 6, height = 4)
+```
+
+# Negative binomial model results on all clusters 
+
+```{r}
+new_names <- tribble(
+  ~cluster_label, ~cluster_label_new,
+  "B cell_1", "memory B cells",
+  "B cell_2", "plasmablasts",
+  "CD4_1", "memory CD4 1",
+  "CD4_2", "memory CD4 2",
+  "CD4_3", "memory CD4 3",
+  "CD4_4", "memory CD4 4",
+  "CD8_1", "memory CD8 1",
+  "CD8_2", "memory CD8 2",
+  "DC_1", "DC_1",
+  "DC_2", "DC_2",
+  "DC_3", "DC_3",
+  "gd T", "gd T",
+  "Mo1", "memory CD4 5",
+  "Mo2", "Mac_1",
+  "Monocytes", "Mac_2",
+  "NK", "NK",
+  "pDC", "pDC",
+  "Treg", "Treg"
+)
+
+
+
+library(qs)
+all_clusters_deseq2 <- qread("reviewing/deseq2_DGE_CSF.qs") %>%
+  mutate(comparison = purrr::map(dge_results, names)) %>%
+  dplyr::select(-data) %>%
+  unnest() %>%
+  unnest()
+
+
+all_clusters_deseq2 %>%
+  mutate(signif = padj < 0.1) %>%
+  group_by(signif, comparison, cluster_label) %>%
+  dplyr::count() %>%
+  ggplot(aes(cluster_label, n, fill = signif)) +
+  geom_bar(stat = "identity") +
+  facet_grid(comparison~.) +
+  theme_mrl()
+
+all_clusters_deseq2 %>%
+  group_by(cluster_label, comparison) %>%
+  dplyr::count()
+
+all_clusters_deseq2 %>%
+  ggplot(aes(cluster_label, slfc)) +
+  #geom_violin(fill = "grey", scale = "width") +
+  geom_boxplot(outlier.alpha = 0.1) +
+  facet_grid(comparison~.) +
+  theme_mrl() +
+  scale_y_continuous(limits = c(-0.5,0.5), oob = oob_squish)
+
+all_clusters_deseq2 <- all_clusters_deseq2 %>%
+  left_join(new_names) %>%
+  ungroup() %>%
+  dplyr::select(comparison, cluster = cluster_label_new, gene = gene_name, shrunken_logFC = slfc, pvalue, padj) 
+
+deg_list <- all_clusters_deseq2 %>%
+  unite("group", cluster, comparison, sep = "---") %>%
+  group_by(group) %>%
+  nest() %>%
+  deframe()
+
+
+writexl::write_xlsx(deg_list, "reviewing/SD2_CSF_DGE.xlsx")
+```
+
+# GSEA of Blood DEGs on CSF DGE list
+
+We run the GSEA analysis with the CSF DGE ranks, using genesets from the PBMC DGE results. There is no difference:
+
+```{r, fig.width=12}
+library(fgsea)
+detach("package:dplyr", unload = TRUE)
+library(clusterProfiler)
+library(dplyr)
+library(enrichplot)
+source("src/wrapper_scripts/gseaplot2_PPAmod.R")
+
+
+nebula_results <- readRDS("results/PBMC/DGE/nebula_myeloid_results_v3_cluster33_NoContaminants_labelPred.rds")
+
+
+nebula_cluster33 <- nebula_results[[1]][["summary"]]
+
+keep_col <- ! grepl("donor", colnames(nebula_cluster33)) # remove data on coeff for donor
+
+
+nebula_cluster33 <- nebula_cluster33[, keep_col]
+
+nebula_cluster33$fdr_treatmentt6M <-
+  p.adjust(nebula_cluster33$p_treatmentt6M, "fdr")
+
+
+ashr_fit_norm <-
+  ashr::ash(
+    nebula_cluster33$logFC_treatmentt6M,
+    nebula_cluster33$se_treatmentt6M,
+    mixcompdist = "normal",
+    method = "shrink"
+  )
+ashr_fit_fdr <-
+  ashr::ash(
+    nebula_cluster33$logFC_treatmentt6M,
+    nebula_cluster33$se_treatmentt6M,
+    mixcompdist = "normal",
+    method = "fdr"
+  )
+
+#ashr::plot_diagnostic(ashr_fit_fdr)
+
+
+
+nebula_cluster33 <- nebula_cluster33 %>%
+  dplyr::select(matches("t6M|gene|avg")) %>%
+  cbind(.,ashr_fit_norm$result)
+
+
+#function to turn named list into a data frame where 
+#one column contains the name of the vector
+#and the other is the vector values, one by row
+list_to_df <- function(listfordf){
+  if(!is.list(listfordf)) stop("it should be a list")
+  
+  df <- list(list.element = listfordf)
+  class(df) <- c("tbl_df", "data.frame")
+  attr(df, "row.names") <- .set_row_names(length(listfordf))
+  
+  if (!is.null(names(listfordf))) {
+    df$name <- names(listfordf)
+  }
+  
+  df
+}
+
+#pdf("quick_GSEA_Analysis_mon_macro.pdf", 10, 16)
+fgsea_thresholded <- lapply(c(0.1, 0.05), function(threshold) {
+  
+  blood_genesets <- nebula_cluster33 %>%
+    dplyr::filter(fdr_treatmentt6M < threshold) %>%
+    #top_n(300, abs(PosteriorMean)) %>%
+    mutate(set = ifelse(PosteriorMean > 0, "up", "dn")) %>%
+    dplyr::select(Term = set, Gene = gene)
+  
+  
+  #Generate the ranked file by selecting the gene name and the statistics variables and remove NAs
+  CSF_ranks <- results_pre_post_global %>%
+    mutate(Gene_Name = gene_name) %>%
+    dplyr::select(Gene_Name, slfc) %>%
+    dplyr::filter(is.na(Gene_Name) == FALSE) %>%
+    arrange(-slfc)
+  
+  #Convert variant results to a vector:
+  CSF_ranks <- deframe(CSF_ranks)
+  
+  
+  gse <-
+    GSEA(
+      geneList = CSF_ranks,
+      nPerm = 50000,
+      minGSSize = 1,
+      maxGSSize = 5000,
+      TERM2GENE = blood_genesets,
+      pvalueCutoff = 1
+    )
+  
+  # fgsea <-
+  #   fgsea(pathways = blood_genesets,
+  #         stats = CSF_ranks,
+  #         nperm = 50000)
+  # 
+  # topPathwaysUp <- fgsea[ES > 0][head(order(-NES), n = 10), pathway]
+  # topPathwaysDown <- fgsea[ES < 0][head(order(NES), n = 10), pathway]
+  # topPathways <- c(topPathwaysUp, rev(topPathwaysDown))
+  # plotGseaTable(blood_genesets[topPathways], CSF_ranks, fgsea,
+  #               gseaParam = 0.5, c(1, 5, 1, 1, 1))
+  # 
+  # 
+  # fgsea <- fgsea %>%
+  #   mutate(fdr_threshold = threshold)
+  
+  
+  p1 <- gseaplot2(
+    gse,
+    geneSetID = "up",
+    title = paste("up geneset with threshold=", threshold),
+    color = "black",
+    pvalue_table = F
+  )
+  
+  p2 <- gseaplot2(
+    gse,
+    geneSetID = "dn",
+    title = paste("dn geneset with threshold=", threshold),
+    color = "black",
+    pvalue_table = F
+  )
+  
+  #print(gse@result)
+  #print(plot_grid(p1,p2, nrow = 1))
+  table_results <- tableGrob(gse@result[,c("ID", "setSize", "enrichmentScore", "NES", "pvalue")])
+  
+  print(plot_grid(plot_grid(p1,p2, nrow = 1), table_results, ncol = 1))
+  
+  return(gse)
+})
+
+fgsea_thresholded[[3]]@result
+
+
+
+fgsea_0.05 <- fgsea_thresholded %>%
+  dplyr::filter(fdr_threshold == 0.05) %>%
+  dplyr::select(pathway, leadingEdge) %>%
+  unnest() %>%
+  left_join(nebula_cluster33 %>% dplyr::select(leadingEdge = gene, blood_sLFC = PosteriorMean)) %>%
+  left_join(poisson %>% dplyr::select(leadingEdge = gene_name, CSF_sLFC = PosteriorMean))
+
+
+ggplot(fgsea_0.05, aes(blood_sLFC, CSF_sLFC)) +
+  geom_point() +
+  geom_smooth() +
+  geom_label_repel(aes(label = leadingEdge))
+
+
+#kable(fgsea_0.05)
+
+
+#dev.off()
+
+
+
+blood_genesets <- nebula_cluster33 %>%
+    dplyr::filter(fdr_treatmentt6M < 0.05) %>%
+    mutate(set = ifelse(PosteriorMean > 0, "up", "dn")) %>%
+    dplyr::select(set, gene) %>%
+    group_by(set) %>%
+    nest() %>%
+    mutate(data = purrr::map(data, ~ pull(.x, gene))) %>%
+    deframe()
+
+
+saveRDS(blood_genesets, "blood_genesets_labelPred_cluster33.rds")
+  
+```
+

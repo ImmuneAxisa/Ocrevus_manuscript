@@ -1,0 +1,484 @@
+---
+title: "CSFmac_phenotype"
+author: "Jessica Wei"
+date: "11/14/2022"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+
+
+#library(RColorBrewer)
+library(viridis)
+library(scales)
+library(ggrepel)
+library(circlize)
+library(RColorBrewer)
+library(gplots)
+library(cowplot)
+library(gtable)
+library(data.table)
+library(ggsci)
+
+#save already knitted chunks
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache.lazy= FALSE, fig.pos = 'H')
+knitr::opts_chunk$set(dev = 'png', dpi = 300, out.width = "80%" )
+#Caching option when tweaking the knitting
+knitr::opts_chunk$set(cache = T)
+```
+
+##read in objects
+
+
+
+```{r}
+
+merged.CSF <- readRDS("results/CSF_analysis/seurat_objects/merged.CSF_integrated_harmony_corrected_cluster_hcluster.rds")
+
+merged.CSF.noMacT <- subset(merged.CSF, is.na(hcluster)| hcluster=="2")
+
+merged.CSF.noMacT_df <- as.data.frame(merged.CSF.noMacT@meta.data)
+
+merged.CSF.noMacT.CD14.1 <- subset(merged.CSF.noMacT, cluster_label == "Mø")
+
+rm(merged.CSF)
+gc()
+
+```
+
+
+## subset myeloid clusters out for phenotype
+
+```{r}
+
+manuscript_label <- c("CD4_1", "CD4_2", "CD8_1", "CD8_2", "CD4_3", "CD4_4", "Treg", "NK", "B cell_1", "DC_1", "CD14+CD68+_1", "gd T", "CD14+CD68+_2", "pDC", "B cell_2", "DC_2", "DC_3")
+
+#merged.CSF has contaminated T cell in macrophage cluster, use merged.CSF.hcluster or merged.CSF.noMacT
+#check added labels
+table(merged.CSF@meta.data$cluster_label)
+table(merged.CSF@meta.data$manuscript_label)
+
+table(merged.CSF.hcluster@meta.data$cluster_label)
+table(merged.CSF.allmyeloid@meta.data$cluster_label)
+
+##add manuscript label to all seurat objects
+merged.CSF.noMacT_df <- merged.CSF.noMacT_df %>% mutate(manuscript_label= case_when(cluster_label== "CD4_1" ~ "CD4_1",
+                                                                                    cluster_label== "CD4_2" ~ "CD4_2",
+                                                                                    cluster_label== "CD4_3" ~ "CD4_3",
+                                                                                    cluster_label== "CD4_4" ~ "CD4_4",
+                                                                                    cluster_label== "Treg" ~ "Treg",
+                                                                                    cluster_label== "CD8_1" ~ "CD8_1",
+                                                                                    cluster_label== "CD8_2" ~ "CD8_2",
+                                                                                    cluster_label== "NK" ~ "NK",
+                                                                                    cluster_label== "B cell_1" ~ "B cell_1",
+                                                                                    cluster_label== "B cell_2" ~ "B cell_2",
+                                                                                    cluster_label== "Mø" ~ "CD14+CD68+_1",
+                                                                                    cluster_label== "Monocytes" ~ "CD14+CD68+_2",
+                                                                                    cluster_label=="DC_1" ~ "DC_1",
+                                                                                    cluster_label== "DC_2" ~ "DC_2",
+                                                                                    cluster_label== "DC_3" ~ "DC_3",
+                                                                                    cluster_label== "pDC" ~ "pDC"))
+table(merged.CSF.noMacT_df$manuscript_label)
+
+merged.CSF.noMacT@meta.data <- merged.CSF.noMacT_df
+
+##subset all myeloid clusters
+merged.CSF.noMacT.allmyeloid <- subset(merged.CSF.noMacT, manuscript_label %in% c("CD14+CD68+_1", "CD14+CD68+_2", "DC_1", "pDC", "DC_2" ,"DC_3"))
+
+table(merged.CSF.noMacT.allmyeloid$manuscript_label)
+
+#subset just CSF macrophage= Mø = CD14+CD68+_1
+merged.CSF.noMacT.CD14.1 <- subset(merged.CSF.noMacT, manuscript_label == ("CD14+CD68+_1"))
+
+```
+
+
+
+
+## Scoring of Mø=Mono2= CSF macrophage = CD14+CD68+_1 activated gene expression
+
+
+```{r}
+VlnPlot(merged.CSF.noMacT.CD14.1, features= c("HLA-DRA","HLA-DRB1","HLA-DRB5"), split.by = "LP", cols = c("cornflowerblue", "gold2", "grey"), pt.size = 0.5, ncol=2)&
+        theme(axis.title.x = element_blank(), axis.text.x = element_blank(), 
+        axis.text.y = element_text(size= 8), 
+        axis.title.y= element_text(size= 8)) &
+        stat_summary(fun.y = mean, geom= "crossbar", size = 0.1, color = "black", width=0.8, position= position_dodge(1))
+
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features= c("CD80", "CD86","CD81","CD83"), split.by = "LP", cols = c("cornflowerblue", "gold2", "grey"), pt.size = 0.5, ncol=2)&
+        theme(axis.title.x = element_blank(), axis.text.x = element_blank(), 
+        axis.text.y = element_text(size= 8), 
+        axis.title.y= element_text(size= 8)) &
+        stat_summary(fun.y = mean, geom= "crossbar", size = 0.1, color = "black", width=0.8, position= position_dodge(1))
+
+
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features= c("CD40","PTPRC"), split.by = "LP", cols = c("cornflowerblue", "gold2", "grey"), pt.size = 0.5, ncol=2)&
+        theme(axis.title.x = element_blank(), axis.text.x = element_blank(), 
+        axis.text.y = element_text(size= 8), 
+        axis.title.y= element_text(size= 8)) &
+        stat_summary(fun.y = mean, geom= "crossbar", size = 0.1, color = "black", width=0.8, position= position_dodge(1))
+
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features= c("TNF", "TNFSF10", "TNFSF12"), split.by = "LP", cols = c("cornflowerblue", "gold2", "grey"), pt.size = 0.5, ncol=2)&
+        theme(axis.title.x = element_blank(), axis.text.x = element_blank(), 
+        axis.text.y = element_text(size= 8), 
+        axis.title.y= element_text(size= 8)) &
+        stat_summary(fun.y = mean, geom= "crossbar", size = 0.1, color = "black", width=0.8, position= position_dodge(1))
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features= c("C1QA", "C1QC", "C1QB", "CD83", "HMGB1", "GRN"), split.by = "LP", cols = c("cornflowerblue", "gold2", "grey"), pt.size = 0.5, ncol=2)&
+        theme(axis.title.x = element_blank(), axis.text.x = element_blank(), 
+        axis.text.y = element_text(size= 8), 
+        axis.title.y= element_text(size= 8)) &
+        stat_summary(fun.y = mean, geom= "crossbar", size = 0.1, color = "black", width=0.8, position= position_dodge(1))
+```
+
+##M1 vs M2 dotplot
+
+```{r}
+#Anti inflammtory/ pro resolving test: CD83, ARG1, SOCS1, MRC1(CD206), CLEC7A (DECTIN1) mediate M2 like in carcinoma, MSR1 (CD204) mediates uptake and limits M1 polarization
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features= c("CD83", "ARG1", "SOCS1", "MRC1", "TGFB1", "IL10", "CLEC7A" ,"CCL3", "CCL4","TNF","MSR1","CD200R1", "CXCL1",  "CCL5","CCL2","STAT6", "IL1B"), split.by = "LP", cols = c("cornflowerblue", "gold2", "grey"), pt.size = 0.5, ncol=2)&
+        theme(axis.title.x = element_blank(), axis.text.x = element_blank(), 
+        axis.text.y = element_text(size= 8), 
+        axis.title.y= element_text(size= 8)) &
+        stat_summary(fun.y = mean, geom= "crossbar", size = 0.1, color = "black", width=0.8, position= position_dodge(1))
+
+pdf(file= "manuscript_plots/CSF myeloid phenotype/M1vM2.pdf")
+
+##Refined list for manuscript
+#msr1 = CD204, MRC1 = CD206
+pdf(file =  "manuscript_plots/m1m2_dotplot_Fig2.pdf", width=8, height = 10)
+fig_2d <- DotPlot(merged.CSF.noMacT.CD14.1, features= c("CD83", "ARG1", "MSR1","MRC1","CD163", "TGFB1","IL10","CLEC7A","CCL2", "CCL3", "CCL4","CCL5", "CCR7","JAK1", "STAT1","STAT6", "IFNG", "TNF", "IL1B", "TLR4", "CD86", "CD80"), group.by = "LP", cols = "RdYlBu")+coord_flip()
+dev.off()
+
+##all genes
+DotPlot(merged.CSF.noMacT.CD14.1, features= c("CD40","ARG1", "SOCS3", "MSR1","MRC1","CD163", "TGFB1","IL10","CLEC7A","CCL2", "CCL3", "CCL4","CCL5", "CCR7","JAK1", "STAT1","STAT6", "IFNG", "TNF", "IL1B","CD32", "CD64","CD80","CD86", "TLR2", "TLR4", "CD38", "IRF5"), group.by = "LP", cols = "RdYlBu")+ coord_flip()
+
+#ARG2 CXCR2 CXCR1 MERTK CD40 CCR4 CD38 CD80 very small percent expressed
+
+
+```
+
+
+## "CSF macrophage" hla module score
+
+```{r}
+
+class2_features <- list(c("HLA-DRA", "HLA-DB1", "HLA-DB5", "HLA-DQB1", "HLA-DPA1", "HLA-DPB1", "HLA-DMB", "HLA-DMA"))
+
+merged.CSF.noMacT.CD14.1 <- AddModuleScore(merged.CSF.noMacT.CD14.1, features = class2_features, ctrl = 5, name = "class2_module_score")
+
+png(file = "manuscript_plots/class2_module_score_Fig2.png", res=100)
+fig_2b_class2 <- VlnPlot(merged.CSF.noMacT.CD14.1, features = "class2_module_score1", group.by = "LP", cols = c("#a53708", "#CC7E0A", "#3eaeb2"), pt.size = 0, ncol =3)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+        ggtitle("MHC Class II Module Score")
+dev.off()
+
+class1_features <- list(c("HLA-E", "HLA-A","HLA-B", "HLA-C","HLA-F"))
+
+merged.CSF.noMacT.CD14.1 <- AddModuleScore(merged.CSF.noMacT.CD14.1, features = class1_features, ctrl = 5, name = "class1_module_score")
+
+png(file = "manuscript_plots/class1_module_score_Fig2.png", res=100)
+fig_2b_class1 <- VlnPlot(merged.CSF.noMacT.CD14.1, features = "class1_module_score1", group.by = "LP", cols = c("#a53708", "#CC7E0A", "#3eaeb2"), pt.size = 0, ncol = 3)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+        ggtitle("MHC Class I Module Score")
+dev.off()
+
+##Expression of HLA master regulator
+png(file= "manuscript_plots/class1_regulators_Fig2.png", res = 100)
+VlnPlot(merged.CSF.noMacT.CD14.1, features = c("NLRC5"), group.by = "LP", cols = c("#a53708", "#CC7E0A", "#3eaeb2"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)
+              ) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+        ggtitle("MHC Class I transcription regulators")
+dev.off()
+
+png(file= "manuscript_plots/class2_regulators_Fig2.png", res = 100)
+VlnPlot(merged.CSF.noMacT.CD14.1, features = c("CIITA"), group.by = "LP", cols = c("#a53708", "#CC7E0A", "#3eaeb2"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 10),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+        ggtitle("MHC Class II transcription regulator")
+dev.off()
+
+
+```
+
+
+## subset myeloid clusters out for phenotype
+
+```{r}
+
+##subset all myeloid clusters
+merged.CSF.noMacT.allmyeloid <- subset(merged.CSF.noMacT, manuscript_label %in% c("CD14+CD68+_1", "CD14+CD68+_2", "DC_1", "pDC", "DC_2" ,"DC_3"))
+
+table(merged.CSF.noMacT.allmyeloid$manuscript_label)
+
+#subset just CSF macrophage= Mø = CD14+CD68+_1
+merged.CSF.noMacT.CD14.1 <- subset(merged.CSF.noMacT, manuscript_label == ("CD14+CD68+_1"))
+
+```
+
+
+
+## microglia vs macrophage signature : compare all myeloid populations
+
+```{r}
+microglia_features <- list(c("P2Y12R", "TMEM119", "TREM2", "CD115", "CD172a", "CD91", "SPI1","FCRLS", "SALL1", "HEXB", "SIGLECH", "SLC2A5"))
+BAM_features <- list(c("TGFBI", "MS4A7", "MS4A6C", "LYZ2","CD163", "P2RX7","CST","CLEC7A"))
+macrophage_features <- list(c("CD44", "CCR2", "CD45", "CD206", "CD163", "CD274","CD169", "MYB"))
+
+
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = microglia_features, ctrl = 5, name = "microglia_module_score")
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = BAM_features, ctrl = 5, name = "BAM_module_score")
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = macrophage_features, ctrl = 5, name = "macrophage_module_score")
+
+
+png(file = "manuscript_plots/microglia_module_score_Fig2A.png", res=100)
+
+fig_1f_microglia <- VlnPlot(merged.CSF.noMacT.allmyeloid, features = "microglia_module_score1", group.by = "manuscript_label", cols = c("#3e63b5", "#3e7ab2", "#cc540a", "#CC440a","#CC0a0a", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+        ggtitle("Microglia Module Score")
+dev.off()
+
+png(file = "manuscript_plots/CNSmac_module_score_Fig2A.png", res = 100)
+fig_1f_CNSmac <- VlnPlot(merged.CSF.noMacT.allmyeloid, features = "BAM_module_score1", group.by = "manuscript_label", cols = c("#3e63b5", "#3e7ab2", "#cc540a", "#CC440a","#CC0a0a", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+        ggtitle("CNS Macrophage Module Score")
+dev.off()
+
+png(file = "manuscript_plots/Panmac_module_score_Fig2A.png", res = 100)
+fig_1f_Panmac <- VlnPlot(merged.CSF.noMacT.allmyeloid, features = "macrophage_module_score1", group.by = "manuscript_label", cols = c("#3e63b5", "#3e7ab2", "#cc540a", "#CC440a","#CC0a0a", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+       ggtitle("Pan-Macrophage Module Score")
+
+dev.off()
+
+rm(fig1f_Panmac)
+
+```
+
+##Monocytic features module scores for myeloid clusters
+
+```{r}
+
+##PBMC monocyte features compiled by JW
+class_monocyte_features <- list(c("CD14", "CCR2", "CCR5", "SELL", "CD36", "CD33", "CD64")) 
+int_monocyte_features <- list(c("HLA-DR", "CD14", "CD11C", "CD68", "FCGR3A", "CX3CR1", "CSF1R", "TLR4"))
+nonclass_monocyte_features <- list(c("FCGR3A", "CX3CR1", "SLAN", "CSF1R", "CXCR1", "CXCR4"))
+
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = class_monocyte_features, ctrl = 5, name = "classical_monocyte_module_score")
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = int_monocyte_features, ctrl = 5, name = "int_monocyte_module_score")
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = nonclass_monocyte_features, ctrl = 5, name = "nonclassical_monocyte_module_score")
+
+
+pdf(file = "manuscript_plots/PBMC_monocytic_module_score_JW.pdf", width = 16, height = 10)
+
+fig_2e_classical <- VlnPlot(merged.CSF.noMacT.allmyeloid, features = "classical_monocyte_module_score1", group.by = "manuscript_label", cols = c("#3e63b5", "#3e7ab2", "#cc540a", "#CC440a","#CC0a0a", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 20),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+        ggtitle("CSF Myeloid Clusters Classical Monocyte Module Score")
+
+fig_2e_int <- VlnPlot(merged.CSF.noMacT.allmyeloid, features = "int_monocyte_module_score1", group.by = "manuscript_label", cols = c("#3e63b5", "#3e7ab2", "#cc540a", "#CC440a","#CC0a0a", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 20),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+  ggtitle("CSF Myeloid Clusters Intermediate Monocyte Module Score")
+
+fig_2e_nonclassical <- VlnPlot(merged.CSF.noMacT.allmyeloid, features = "nonclassical_monocyte_module_score1", group.by = "manuscript_label", cols = c("#3e63b5", "#3e7ab2", "#cc540a", "#CC440a","#CC0a0a", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=16), 
+              plot.title= element_text(size= 20),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = mean_sdl, fun.args= list(mult=1), geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()+
+        ggtitle("CSF Myeloid Clusters Nonclassical Monocyte Module Score")
+
+dev.off()
+
+#PBMC monocyte features from Blood 2011 microarray
+blood2011_classical1 <- list(c("NRG1", "THBS1", "F13A1", "F5", "SERPINB2", "CD36", "CD9", "RAB27A", "THBS3", "VWF", "F2RL1", "ITGA5", "S100A12", "S100A9", "S100A8"))
+blood2011_classical2 <- list(c("MGST1", "JUN", "PTGS2", "PTAFR", "SOCS3", "ADM", "SOD2", "NR4A2", "FOSB", "IGFBP7", "SCARB1", "DDIT3", "LDLR", "GHRL"))
+blood2011_int <- list(c("HLA-DRB3", "HLA-DRA", "CD74", "HLA-DQB1", "HLA-DPB1", "HLA-DPA1", "HLA-DOA", "CD40"))
+blood2011_nonclassical1 <- list(c("PIP5K2A", "RHOF", "VAV2", "VASP", "PKN1", "PRR5", "PALM", "FMNL2", "RHOC", "C1QB", "C1QA"))
+blood2011_nonclassical2 <- list(c("PLCG2", "CBL", "LCP2", "VAV1", "WASF2", "LYN", "CORO2A", "PIK3AP1", "VASP", "HCK", "PTPRC", "EVL"))
+
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = blood2011_classical1, ctrl = 5, name = "Blood2011_classical1_module_score")
+
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = blood2011_classical2, ctrl = 5, name = "Blood2011_classical2_module_score")
+
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = blood2011_int, ctrl = 5, name = "Blood2011_int_module_score")
+
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = blood2011_nonclassical1, ctrl = 5, name = "Blood2011_nonclassical1_module_score")
+
+merged.CSF.noMacT.allmyeloid <- AddModuleScore(merged.CSF.noMacT.allmyeloid, features = blood2011_nonclassical2, ctrl = 5, name = "Blood2011_nonclassical2_module_score")
+
+pdf(file = "manuscript_plots/Blood_2011_microarray_monocytic_module_score.pdf")
+VlnPlot(merged.CSF.noMacT.allmyeloid, features = "Blood2011_classical1_module_score1", group.by = "manuscript_label", cols = c("#0066CC", "#3399FF", "#E53939", "#CC3333","#CC0000", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+VlnPlot(merged.CSF.noMacT.allmyeloid, features = "Blood2011_classical2_module_score1", group.by = "manuscript_label", cols = c("#0066CC", "#3399FF", "#E53939", "#CC3333","#CC0000", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+VlnPlot(merged.CSF.noMacT.allmyeloid, features = "Blood2011_int_module_score1", group.by = "manuscript_label", cols = c("#0066CC", "#3399FF", "#E53939", "#CC3333","#CC0000", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+VlnPlot(merged.CSF.noMacT.allmyeloid, features = "Blood2011_nonclassical1_module_score1", group.by = "manuscript_label", cols = c("#0066CC", "#3399FF", "#E53939", "#CC3333","#CC0000", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+VlnPlot(merged.CSF.noMacT.allmyeloid, features = "Blood2011_nonclassical2_module_score1", group.by = "manuscript_label", cols = c("#0066CC", "#3399FF", "#E53939", "#CC3333","#CC0000", "#990000"), pt.size = 0)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+dev.off()
+
+
+
+```
+
+## microglia/macrophage/BAM signatures pre and post treatment in CD14+CD68+_1 cluster
+
+## no difference in expression across timepoints
+
+```{r}
+
+microglia_features <- list(c("P2Y12R", "TMEM119", "TREM2", "CD115", "CD172a", "CD91", "SPI1","FCRLS", "SALL1", "HEXB", "SIGLECH", "SLC2A5"))
+BAM_features <- list(c("TGFBI", "MS4A7", "MS4A6C", "LYZ2","CD163", "P2RX7","CST","CLEC7A"))
+macrophage_features <- list(c("CD44", "CCR2", "CD45", "CD206", "CD163", "CD274","CD169", "MYB"))
+
+
+merged.CSF.noMacT.CD14.1 <- AddModuleScore(merged.CSF.noMacT.CD14.1, features = microglia_features, ctrl = 5, name = "microglia_module_score")
+merged.CSF.noMacT.CD14.1 <- AddModuleScore(merged.CSF.noMacT.CD14.1, features = BAM_features, ctrl = 5, name = "BAM_module_score")
+merged.CSF.noMacT.CD14.1 <- AddModuleScore(merged.CSF.noMacT.CD14.1, features = macrophage_features, ctrl = 5, name = "macrophage_module_score")
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features = "microglia_module_score1", group.by = "LP", cols = c("#E53939","#0066CC", "#3399FF"), pt.size = 0.1)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features = "BAM_module_score1", group.by = "LP", cols = c("#E53939", "#0066CC", "#3399FF"), pt.size = 0.1)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features = "macrophage_module_score1", group.by = "LP", cols = c("#E53939", "#0066CC", "#3399FF"), pt.size = 0.1)+
+        theme(axis.title.x = element_blank(), 
+              axis.text.x = element_text(size=12), 
+              plot.title= element_text(size= 14),
+              axis.text.y = element_text(size= 12),
+              axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+```
+
+
+
+
+##chemokines and cytokines pre and post-treatment
+
+```{r}
+
+VlnPlot(merged.CSF.noMacT.CD14.1, features = c("CCL3", "CCL4", "TNF", "CXCL16", "IL1B", "CXCL8"), group.by = "LP", cols = c("#E53939", "#0066CC", "#3399FF"), pt.size = 0.1)+
+        theme(axis.title.x = element_blank(), axis.text.x = element_text(size = 12), plot.title = element_text(size = 14),
+        axis.text.y = element_text(size= 12), 
+        axis.title.y= element_text(size= 8)) +
+        stat_summary(fun.data = "mean_sd", geom= "crossbar", size = 0.3, color = "black", width=0.2)+
+        NoLegend()
+
+```

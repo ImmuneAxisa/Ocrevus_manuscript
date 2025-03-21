@@ -1,0 +1,917 @@
+---
+title: "New analysis with 2021 samples"
+author: "PPA"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: 
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    df_print: paged
+geometry: margin=0.5in
+header-includes:
+   - \usepackage{subfig}
+   - \usepackage{float}
+---
+
+
+```{r setup, include=FALSE}
+
+##########################
+## Packages and options ##
+##########################
+
+library(gridExtra)
+library(knitr)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(stringr)
+library(ggplot2)
+library(ggExtra)
+library(stats)
+# library(RColorBrewer)
+library(viridis)
+library(scales)
+library(ggrepel)
+library(circlize)
+library(RColorBrewer)
+library(gplots)
+library(cowplot)
+library(gtable)
+library(data.table)
+library(Seurat)
+library(hdf5r)
+library(ggsci)
+library(ggridges)
+library(forcats)
+library(kableExtra)
+library(sp)
+# library(FactoMineR)
+# library(factoextra)
+library(wesanderson)
+library(magrittr)
+library(ComplexHeatmap)
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.pos = 'H')
+knitr::opts_chunk$set(dev = 'png', dpi = 300)
+
+#set root directory to be one level up of the current directory
+#knitr::opts_knit$set(root.dir = '.')
+
+#Caching option when tweaking the knitting
+knitr::opts_chunk$set(cache = T)
+
+WRITE_FILES <- FALSE
+
+
+##################
+## ggplot theme ##
+##################
+
+theme_mrl <- function(x = 1) {
+  theme_minimal() +
+    theme(
+      axis.line = element_line(),
+      axis.ticks.x = element_line(),
+      axis.ticks.y = element_line(),
+      axis.text.x = element_text(size = 12*x,face = "bold", angle = 45, vjust = 0.9, hjust=0.9),
+      axis.text.y = element_text(size = 12*x,face = "bold"),
+      axis.title.x = element_text(size = 12*x,face = "bold"),
+      axis.title.y = element_text(size = 12*x,face = "bold"),
+      strip.background = element_rect(fill="gray20", colour="gray20", linetype="solid"),
+                                      strip.text = element_text(size=12*x, colour="white", face="bold"),
+                                      legend.title = element_text(size=14*x, face = "bold"),
+                                      legend.text = element_text(size=12*x, color="gray20", face="bold"),
+      legend.background = element_rect(fill = "transparent", colour = "transparent"),
+      plot.title =  element_text(hjust=0.5, vjust=2, face="bold"),
+      plot.subtitle = element_text(hjust=0.5, vjust=3, face="italic"),
+      plot.caption = element_text(hjust = 0, face = "italic")
+                                      )
+}
+
+
+opts <- options()  # save old options
+
+options(ggplot2.continuous.colour="viridis")
+options(ggplot2.continuous.fill = "viridis")
+
+palette <- c(pal_rickandmorty()(12),pal_jco()(10), pal_futurama()(11), pal_tron()(7))
+
+
+options(bitmapType = 'cairo', device = 'png')
+```
+
+
+
+```{r, fig.width=10}  
+# function to overlay values onto the UMAP embeddings
+hex_plots <- function(data,dim1,dim2, color, facets = "", CI = 0.05) {
+
+  # calculate the quantilles for CI limits onthe color scale.
+  if(CI) {
+    lims <- quantile(data[,color], probs = c(CI/2,1 - CI/2))
+  } else {
+    lims <- c(NA,NA)
+  }
+  
+  
+  ggplot(data, aes_string(dim1, dim2)) +
+  stat_summary_hex(bins = 100,
+                   fun = median,
+                   aes(z= !!ensym(color), color = ..value..)) +
+    facet_wrap(as.formula(paste(". ~", facets)), scales = "free") +
+    ggtitle(color) +
+    theme_mrl() +
+    guides(fill = guide_none()) +
+    scale_fill_viridis(limits = lims, oob = squish) +
+    scale_color_viridis(limits = lims, oob = squish)
+}
+
+
+
+ridges_plots <- function(data,dim1,dim2) {
+  
+  ggplot(data, 
+       aes_string(dim1, 
+                  dim2)) +
+  stat_density_ridges(aes(fill = factor(stat(quantile))),
+    geom = "density_ridges_gradient", calc_ecdf = TRUE,
+    quantiles = c(0.01,0.05, 0.1,0.9,0.95,0.99), quantile_lines = TRUE,
+    color = NA) +
+  facet_grid(curated_types~., scales = "free_y", space = "free_y") +
+  scale_fill_manual(labels = c("0.01","0.05", "0.1","0.1-0.9","0.9","0.95","0.99"),
+                    values = c("black","grey80","black","grey80","black","grey80","black"))
+}
+
+
+
+
+
+```
+
+
+
+
+# filter cells QC
+
+
+```{r, fig.asp= 1.1}
+
+
+
+
+high_point <- function(x, high_only = F) {
+  den <- density(x)
+  high <- data.frame(x = den[["x"]],
+                     y = den[["y"]]) %>%
+    dplyr::filter(y == max(y)) %>%
+    pull(x) %>%
+    mean()
+  
+  if(!high_only) {
+    if(mean(x) < high) {
+      return(c(y = high,ymin = mean(x), ymax = high))
+    } else {
+      return(c(y = high,ymin = high, ymax = mean(x)))
+    }
+  } else {
+    return(high)
+  }
+  
+    
+  
+}
+
+
+raw_meta <- readRDS("results/PBMC/seurat_QC/master_meta.rds") %>%
+  tibble::rownames_to_column("cell.id") %>%
+  separate(cell.id, c("patientID", "t" , "barcode"), sep = "_") %>%
+  mutate(t = ifelse(grepl("6m|6M", t), "t6M", "t0M")) %>%
+  mutate(sample = paste(patientID, t, sep = "_"))
+
+unique(raw_meta$sample)
+
+
+raw_meta %>%
+  ggplot(aes(nCount_RNA, sample, fill = patientID)) +
+  geom_density_ridges(quantile_lines = TRUE) +
+  scale_x_log10(limits = c(NA,NA)) +
+  stat_summary(fun.data = "high_point", geom = "pointrange", position = position_nudge(y = 0.8)) +
+  scale_fill_cyclical(values = c("tan", "lightskyblue3")) +
+  annotation_logticks(sides = "b") +
+  geom_vline(xintercept = 1200)
+
+raw_meta %>%
+  dplyr::filter(nCount_RNA > 1200 & nFeature_RNA > 500 & nFeature_RNA < 4000) %>%
+  ggplot(aes(nFeature_RNA, sample, fill = patientID)) +
+  geom_density_ridges(quantile_lines = TRUE) +
+  stat_summary(fun.data = "high_point", geom = "pointrange", position = position_nudge(y = 0.8)) +
+  scale_x_log10() +
+  scale_fill_cyclical(values = c("tan", "lightskyblue3")) +
+  annotation_logticks(sides = "b")
+
+
+
+
+
+# center with high point
+
+
+test <- raw_meta %>%
+  dplyr::filter(nCount_RNA > 1200 & nFeature_RNA > 500 & nFeature_RNA < 4000) %>%
+  mutate(nFeature_RNA = log10(nFeature_RNA)) %>%
+  group_by(sample) %>%
+  nest() %>%
+  mutate(high = purrr::map(data, ~rep(high_point(.$nFeature_RNA, high_only = T),
+                                      nrow(.)))) %>%
+  unnest() %>%
+  ungroup() %>%
+  mutate(nFeature_RNA = 10^(nFeature_RNA - high + mean(nFeature_RNA)))
+
+test %>%
+  ggplot(aes(nFeature_RNA, sample, fill = patientID)) +
+  geom_density_ridges(quantile_lines = TRUE) +
+  stat_summary(fun.data = "high_point", geom = "pointrange", position = position_nudge(y = 0.8)) +
+  scale_x_log10() +
+  scale_fill_cyclical(values = c("tan", "lightskyblue3")) +
+  annotation_logticks(sides = "b") +
+  geom_vline(xintercept = c(900, 1800))
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r import rds from Jess}
+
+
+meta_table <- readRDS("results/PBMC/clustering/master_seurat_curated_types_table_harmony_iterative_batch_emulsion.rds") %>%
+  mutate(treatment = ifelse(grepl("6", treatment), "t6M","t0M"),
+         curated_clusters = unclass(as.factor(curated_clusters)))
+
+
+
+meta_table <- readRDS("results/PBMC/clustering/master_seurat_coarse_types_table_harmony_iterative_batch_emulsion.rds") %>%
+  dplyr::select(matches("coarse|cell\\.id")) %>%
+  right_join(meta_table)
+  
+
+```
+
+
+
+
+
+
+\pagebreak
+
+
+
+# Low dimensionality embeddings
+
+
+## Effect of knn, min distance and spread
+
+```{r choosing UMAP parameters, fig.width=10}
+
+initial_meta <- readRDS("results/PBMC/clustering/master_seurat_low_res_clustering_table_harmony_iterative_batch_emulsion.rds") %>%
+  mutate(treatment = ifelse(grepl("6", treatment), "t6M","t0M"))
+
+UMAP <- initial_meta %>%
+  dplyr::select(matches("^UMAP|cell\\.id")) %>%
+  gather("embed", "coord", -cell.id) %>%
+  tidyr::separate(embed, c("iteration", "dim"), sep = "_") %>%
+  mutate(dim = paste0("dim_", dim)) %>%
+  spread(dim, coord) %>%
+  separate(iteration, c("knn", "min.dist", "spread"), sep = "x") %>%
+  mutate(min.dist = gsub("Md0", "Md0.", min.dist)) %>%
+  mutate(min.dist = fct_reorder(min.dist,
+                                parse_number(min.dist))) %>%
+  mutate(spread = fct_reorder(spread,
+                              as.numeric(gsub("S", "", spread))))
+
+
+for(knn in c(50)) {
+  filter = paste0("UMAPn",knn)
+  
+  plot <- UMAP %>%
+    dplyr::filter(knn == filter) %>%
+    #mutate(dim_2 = ifelse(knn == "UMAPn50", -dim_2, dim_2)) %>% # invert dim 2 for knn = 50 as it seems flipped
+    ggplot(aes(dim_1,
+               dim_2)) +
+    geom_hex(aes(color = ..count..), bins = 200) +
+    scale_color_viridis(trans = "log2") +
+    scale_fill_viridis(trans = "log2") +
+    facet_wrap(min.dist~spread, scales = "free") +
+    theme(axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.title = element_blank(),
+          axis.text = element_blank()) +
+    ggtitle(paste("knn =",knn))
+  
+  cat("\n\n")
+  
+  print(plot)
+  
+  cat("\n\n")
+  
+}
+
+
+
+```
+
+\pagebreak
+
+
+
+## Clusters at low resolution
+
+
+```{r low res clusters, fig.width=10, fig.asp= 1}
+
+
+
+best_clusters <- initial_meta %>%
+  dplyr::select(cell.id, SNNk20_algo1_res0.1)
+
+
+for (knn in c(50)) {
+  filter = paste0("UMAPn", knn)
+  
+  
+  plot <- UMAP %>%
+    dplyr::filter(knn == filter & grepl("5", spread)) %>%
+    left_join(best_clusters) %>%
+    #mutate(dim_2 = ifelse(knn == "UMAPn50", dim_2, -dim_2)) %>% # invert dim 2 for knn = 50 as it seems flipped
+    ggplot(aes(dim_1,
+               dim_2)) +
+    geom_hex(aes(fill = SNNk20_algo1_res0.1, alpha = log(..ndensity..)),
+             bins = 200,
+             lwd = 0.01) +
+    scale_alpha(range = c(0.2, 1)) +
+    theme_mrl() +
+    facet_wrap(min.dist~spread, scales = "free", ncol = 2) +
+    theme(panel.background = element_rect(fill = 'grey90', color = NA),
+          legend.position = "bottom") +
+    scale_fill_manual(values = palette) +
+    scale_color_manual(values = palette) +
+    ggtitle(knn)
+  
+  cat("\n\n")
+  
+  print(plot)
+  
+  cat("\n\n")
+  
+}
+
+```
+
+\pagebreak
+
+
+## Clusters at intermediate resolution, and comparison with UMAP parameters 
+
+\  
+
+For UMAP I fixed: knn = 50 and spread = 5, looking at variation on min distance
+
+
+```{r higher res clusters, fig.width=10, fig.asp= 1}
+
+best_clusters <-initial_meta %>%
+  dplyr::select(cell.id, SNNk20_algo1_res0.2) %>%
+  mutate(SNNk20_algo1_res0.2 =as.factor(SNNk20_algo1_res0.2))
+
+for (knn in c(50)) {
+  filter = paste0("UMAPn", knn)
+  
+  
+  plot <- UMAP %>%
+    dplyr::filter(knn == filter & grepl("5", spread)) %>%
+    left_join(best_clusters) %>%
+    #mutate(dim_2 = ifelse(knn == "UMAPn50", dim_2, -dim_2)) %>% # invert dim 2 for knn = 50 as it seems flipped
+    ggplot(aes(dim_1,
+               dim_2)) +
+    geom_hex(aes(fill = as.factor(SNNk20_algo1_res0.2), alpha = log(..ndensity..)),
+             bins = 200,
+             lwd = 0.01) +
+    scale_alpha(range = c(0.2, 1)) +
+    theme_mrl() +
+    facet_wrap(min.dist~spread, scales = "free", ncol = 2) +
+    theme(panel.background = element_rect(fill = 'grey90', color = NA),
+          legend.position = "bottom") +
+    scale_fill_manual(values = palette) +
+    scale_color_manual(values = palette) +
+    ggtitle(knn)
+  
+  cat("\n\n")
+  
+  print(plot)
+  
+  cat("\n\n")
+  
+}
+
+
+```
+
+
+\pagebreak
+
+
+## Clusters at higher resolution, and comparison with UMAP parameters 
+
+\  
+
+For UMAP I fixed: knn = 50 and spread = 5, looking at variation on min distance
+
+this resolution seems too high
+
+```{r higher res clusters, fig.width=10, fig.asp= 1}
+
+best_clusters <-meta_table %>%
+  dplyr::select(cell.id, SNNk20_algo1_res0.5)
+
+for (knn in c(50)) {
+  filter = paste0("UMAPn", knn)
+  
+  
+  plot <- UMAP %>%
+    dplyr::filter(knn == filter & grepl("5", spread)) %>%
+    left_join(best_clusters) %>%
+    #mutate(dim_2 = ifelse(knn == "UMAPn50", dim_2, -dim_2)) %>% # invert dim 2 for knn = 50 as it seems flipped
+    ggplot(aes(dim_1,
+               dim_2)) +
+    geom_hex(aes(fill = SNNk20_algo1_res0.5, alpha = log(..ndensity..)),
+             bins = 200,
+             lwd = 0.01) +
+    scale_alpha(range = c(0.2, 1)) +
+    theme_mrl() +
+    facet_wrap(min.dist~spread, scales = "free", ncol = 2) +
+    theme(panel.background = element_rect(fill = 'grey90', color = NA),
+          legend.position = "bottom") +
+    scale_fill_manual(values = palette) +
+    scale_color_manual(values = palette) +
+    ggtitle(knn)
+  
+  cat("\n\n")
+  
+  print(plot)
+  
+  cat("\n\n")
+  
+}
+
+
+```
+
+
+\pagebreak
+
+
+
+
+
+## QC inspection
+
+
+```{r looking at cluster 9, fig.asp=1, fig.width=15}
+
+QC_metrics <- initial_meta %>%
+  dplyr::select(matches("SNNk20_algo1_res0\\.2|cell.id|_RNA|donor|treatment")) %>%
+  mutate(SNNk20_algo1_res0.2 =as.factor(SNNk20_algo1_res0.2))
+
+
+best_UMAP <- UMAP %>%
+    dplyr::filter(knn == "UMAPn50" & 
+                    #grepl("5",spread) & 
+                    min.dist ==  "Md0.01" & 
+                    spread == "S5")
+
+# save for later
+saveRDS(best_UMAP, "results/PBMC/clustering/best_UMAP.rds")
+
+
+best_clusters <-meta_table %>%
+  dplyr::select(cell.id, SNNk20_algo1_res0.2)
+
+
+cat("\n\n")
+
+p1 <- ggplot(QC_metrics, 
+       aes(SNNk20_algo1_res0.2, nCount_RNA)) +
+  geom_boxplot() +
+  annotation_logticks(sides = "l") +
+  scale_y_log10()
+
+cat("\n\n")
+
+p2 <- ggplot(QC_metrics, 
+       aes(SNNk20_algo1_res0.2, nFeature_RNA)) +
+  geom_boxplot() +
+  annotation_logticks(sides = "l") +
+  scale_y_log10()
+
+
+
+
+p3 <- best_UMAP %>%
+  #left_join(best_clusters) %>%
+  #dplyr::filter(SNNk20_algo1_res0.3 == 9) %>%
+  left_join(QC_metrics) %>%
+  ggplot(aes(dim_1,
+               dim_2)) +
+  # stat_bin_hex(data = best_UMAP, 
+  #                color = "grey",
+  #                fill = "grey",
+  #                bins = 100) +
+  #facet_wrap(.~SNNk20_algo1_res0.3, ncol = 3) +
+  stat_summary_hex(aes(z = nFeature_RNA), bins = 100) +
+  scale_fill_viridis(trans = "log10", limits = c(500,3800)) +
+  guides(fill = guide_colorbar(title = "nFeature_RNA")) +
+  ggtitle("Number of Features detected in UMAP embeddings")
+
+
+cat("\n\n")
+
+plot_grid(p1,p2,p3,
+          ncol = 1,
+          rel_heights = c(0.5,0.5,1))
+
+
+cat("\n\n")
+
+QC_metrics %>%
+  ggplot(aes(paste(donor,treatment),
+             fill = donor,
+             color = treatment)) +
+  geom_bar(alpha = 0.7) +
+  theme_mrl() +
+  scale_fill_manual(values = palette) +
+  scale_color_manual(values = c(NA, "black")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank()) +
+  facet_wrap(.~SNNk20_algo1_res0.2, ncol = 3, scales = "free_y") +
+  labs(title = "Cell # contributions per emulsion",
+       x = "emulsion",
+       y = "cell #")
+
+```
+
+
+
+# Reference calls and subclustering based on singleR reference calls
+
+## Running singleR on clusters
+
+```{r, fig.width=15}
+
+
+
+
+singleR_res <- readRDS("results/PBMC/clustering/subclustered_master_seurat_harmony_iterative_batch_emulsion_singleR.rds")
+
+
+for(singleR_output in names(singleR_res)) {
+  
+  
+  
+  title <- singleR_output
+  
+  print(title)
+  
+  singleR_output <- singleR_res[[singleR_output]]
+
+  rownames(singleR_output[[1]][[1]]) <- rownames(singleR_output[[1]][[2]])
+  
+  
+  monaco.matrix <- singleR_output[[1]][[1]] / matrixStats::rowMaxs(singleR_output[[1]][[1]])
+  
+  monaco.labels <- (monaco.matrix == 1) * singleR_output[[1]][[1]] %>% round(digits = 2)
+  
+  monaco.labels[monaco.labels == 0] <- ""
+  
+  new_cluster_names <- paste(unclass(as.factor(rownames(monaco.matrix))), rownames(monaco.matrix), sep = "   ")
+  
+  rownames(monaco.matrix) <- new_cluster_names
+  
+  pheatmap::pheatmap(t(monaco.matrix), 
+                     scale = "none", 
+                     border_color = NA,
+                     color = magma(100),
+                     cutree_cols = 4,
+                     cutree_rows = 4,
+                     display_numbers = t(monaco.labels),
+                     main = title)
+  
+  
+  
+  cat("\n\n")
+  
+  rownames(singleR_output[[2]][[1]]) <- rownames(singleR_output[[2]][[2]])
+  
+  dice.matrix <- singleR_output[[2]][[1]] / matrixStats::rowMaxs(singleR_output[[2]][[1]])
+  
+  dice.labels <- (dice.matrix == 1) * singleR_output[[2]][[1]] %>% round(digits = 2)
+  
+  dice.labels[dice.labels == 0] <- ""
+  
+  new_cluster_names <- paste(unclass(as.factor(rownames(dice.matrix))), rownames(dice.matrix), sep = "   ")
+  
+  rownames(dice.matrix) <- new_cluster_names
+  
+  pheatmap::pheatmap(t(dice.matrix), 
+                     scale = "none", 
+                     border_color = NA,
+                     color = magma(100),
+                     cutree_cols = 4,
+                     cutree_rows = 4,
+                     display_numbers = t(dice.labels),
+                     main = title)
+}
+
+
+
+
+```
+
+`meta_subC` is the manual curation, choosing different resolutions depending on the subclustering groups. I then renumber those calls from 1 to 38 in `curated_clusters`
+
+```{r higher res clusters, fig.width=10, fig.asp= 1}
+
+
+best_clusters <- meta_table %>%
+  dplyr::select(cell.id, curated_clusters) %>%
+  mutate(curated_clusters= as.factor(curated_clusters))
+
+
+plot <- best_UMAP %>%
+  left_join(best_clusters)
+
+cluster_labels <- plot %>%
+  group_by(curated_clusters) %>%
+  summarize(dim_1 = median(dim_1), dim_2 = median(dim_2))
+
+plot %>%
+  ggplot(aes(dim_1,
+             dim_2)) +
+  geom_hex(aes(fill = curated_clusters, alpha = log(..ndensity..)),
+           bins = 300,
+           lwd = 0.001) +
+  geom_label_repel(data = cluster_labels, 
+             aes(label = curated_clusters, fill = as.character(curated_clusters)), 
+             color = "black", size =5, alpha = 0.8) +
+  scale_alpha(range = c(0.2, 1)) +
+  theme_mrl() +
+  facet_wrap(min.dist ~ spread, scales = "free", ncol = 2) +
+  theme(panel.background = element_rect(fill = 'grey90', color = NA)) +
+  scale_fill_manual(values = palette) +
+  scale_color_manual(values = palette) +
+  ggtitle(knn)
+
+
+```
+
+
+## Check singleR results at single cell level for cell type sanity check
+
+Evaluate contamination with singleR reference typing at the single cell level. All cells score high on monocyte references, but some also score high for other lineages. This suggest some hybrid cell type or doublet.
+
+
+```{r, eval=F, fig.width=10}
+#####
+mon_sc <- readRDS("results/PBMC/clustering/cell_typing_sc_curated_types_master_seurat_harmony_iterative_batch_emulsion.rds")[[1]]
+
+
+rownames(mon_sc[[1]]) <- rownames(mon_sc[[2]])
+
+mon_sc <- mon_sc[[1]] / matrixStats::rowMaxs(mon_sc[[1]])
+
+
+
+cluster_ids <- meta_table %>%
+  mutate(cluster = paste(curated_clusters, fine_clusters, sep = "_")) %>%
+  dplyr::select(cluster, cell.id) %>%
+  group_by(cluster) %>%
+  summarize(ids = list(cell.id)) %>%
+  deframe()
+    
+hm_list <- lapply(names(cluster_ids), function(cluster) {
+  cluster_type_scores <- mon_sc[cluster_ids[[cluster]], ]
+  
+  
+  hm <- Heatmap(
+    t(cluster_type_scores),
+    col = c(viridis(1000), "#ff0000"),
+    column_title = cluster,
+    show_column_names = F,
+    column_km = ceiling(length(cluster_ids[[cluster]])/10000)
+  )
+  
+  png(file.path("results","clustering", paste0(cluster, ".png")))
+  
+  draw(hm)
+  
+  dev.off()
+  
+  return(hm)
+})
+
+
+cluster@meta.data <- cluster_type_scores %>%
+  kmeans(2) %>%
+  extract2("cluster") %>%
+  data.frame(km = .) %>%
+  tibble::rownames_to_column("cell.id") %>%
+  right_join(cluster@meta.data %>% tibble::rownames_to_column("cell.id")) %>%
+  tibble::column_to_rownames("cell.id")
+
+meta_cluster <- cluster@meta.data %>%
+  dplyr::select(c("nFeature_RNA","nCount_RNA","t6M","treatment", "NK", "km")) %>%
+  mutate(nFeature_RNA = log10(nFeature_RNA), nCount_RNA = log10(nCount_RNA), km = paste0("km",km))
+
+
+
+
+cluster_type_scores <- cluster_type_scores / matrixStats::rowMaxs(cluster_type_scores)
+
+row_clust <- hclust(dist(t(cluster_type_scores)))
+
+col_clust <- hclust(dist(cluster_type_scores))
+
+cluster_split <- paste0("cluster ", cutree(col_clust, k = 2))
+
+names(cluster_split) <- rownames(cluster_type_scores)
+cluster_col <- ggsci::pal_futurama()(2)
+
+names(cluster_col) <- unique(cluster_split)
+
+
+
+
+
+```
+
+
+# sample representation across clusters
+
+
+
+
+```{r, fig.width=15}
+
+
+ggplot(meta_table, aes(as.factor(curated_clusters), fill = paste(donor, treatment))) +
+  geom_bar() +
+  scale_fill_manual(values = palette) +
+  guides(fill = guide_legend(ncol = 1)) +
+  theme_mrl(0.7)
+
+
+
+ggplot(meta_table, aes(as.factor(curated_clusters), fill = paste(donor, treatment))) +
+  geom_bar(position = "fill") +
+  theme_mrl() +
+  scale_fill_manual(values = palette)
+
+```
+
+
+# gene markers
+
+## against all
+
+```{r, fig.width=10}
+
+
+presto_results <- readRDS("results/PBMC/DGE/presto_markers_curated_clusters.rds")
+
+
+presto_results <- do.call(rbind, presto_results) %>%
+  dplyr::filter(padj < 0.01)
+
+
+ggplot(presto_results, aes(group, auc)) +
+  geom_violin() +
+  geom_boxplot(width = 0.3, 
+               outlier.alpha = 0.5,
+               outlier.size = 0.5) +
+  theme_mrl() +
+  geom_hline(yintercept = c(0.65, 0.35), linetype = "dashed")
+
+
+# number of markers kept
+presto_results %>% 
+  dplyr::filter(auc < 0.35 | auc > 0.65) %>%
+  pull(feature) %>%
+  unique() %>%
+  length()
+
+top_markers <- presto_results %>% 
+  dplyr::filter(auc < 0.35 | auc > 0.65) %>%
+  group_by(group) %>%
+  mutate(up = ifelse(auc > 0.5,rank(-auc), NA)) %>%
+  mutate(dn = ifelse(auc < 0.5,rank(auc), NA)) %>%
+  ungroup() %>%
+  dplyr::filter(up < 11 | dn < 11) %>%
+  group_by(group) %>%
+  nest() %>%
+  ungroup() %>%
+  mutate(up = purrr::map(data, ~ { .x %>%
+      dplyr::filter(up < 11) %>%
+      arrange(-auc) %>%
+      pull(feature) %>%
+      paste(collapse = ", ")  
+  })) %>%
+  mutate(dn = purrr::map(data, ~ { .x %>%
+      dplyr::filter(dn < 11) %>%
+      arrange(auc) %>%
+      pull(feature) %>%
+      paste(collapse = ", ")  
+  })) %>%
+  dplyr::select(-data) %>%
+  unnest() %>%
+  mutate(cluster = unclass(as.factor(group)))
+  
+
+plot_grid(grid.table(top_markers))
+
+```
+
+
+
+
+## paired markers
+
+```{r, eval=F}
+curation <- readRDS("results/PBMC/clustering/master_seurat_curated_types_table_harmony_iterative_batch_emulsion.rds") %>%
+  mutate(curated_clusters = unclass(as.factor(meta_subC))) %>%
+  dplyr::select(curated_types, curated_clusters, meta_subC) %>%
+  distinct()
+
+
+paired_presto <- readRDS("results/PBMC/DGE/presto_paired_markers_curated_clusters.rds")
+
+
+paired_presto <- do.call(rbind, paired_presto) %>%
+  dplyr::filter(padj < 0.05)
+
+
+saveRDS(paired_presto, "results/PBMC/DGE/presto_paired_markers_curated_clusters_filtered.rds")
+```
+
+
+```{r, fig.width=10}
+
+
+paired_presto <- readRDS("results/PBMC/DGE/presto_paired_markers_curated_clusters_filtered.rds")
+
+
+paired_presto %>%
+  dplyr::filter(auc < 0.4 | auc > 0.6) %>%
+  dplyr::select(feature) %>%
+  distinct() %>%
+  pull(feature) %>%
+  length()
+
+paired_presto %>%
+  mutate(pctFC = log2((pct_in + 0.01) / (pct_out + 0.01))) %>%
+  dplyr::select(pctFC) %>%
+  ggplot(aes(pctFC)) +
+  geom_histogram(bins = 100)
+
+
+
+
+
+lib_sizes <- readRDS("results/PBMC/clustering/master_seurat_curated_types_table_harmony_iterative_batch_emulsion.rds") %>%
+  mutate(curated_clusters = unclass(as.factor(meta_subC))) %>%
+  dplyr::select(curated_types, curated_clusters, meta_subC, cell.id, nFeature_RNA, nCount_RNA, sample) %>%
+  group_by(sample) %>%
+  mutate(nFeat_quantiles = ntile(nFeature_RNA, 100))
+  
+
+ggplot(lib_sizes, aes(meta_subC,as.numeric(nFeat_quantiles), fill = sample)) +
+  stat_summary_bin(position = "jitter") +
+  theme_mrl() +
+  facet_grid(.~curated_types, scales = "free_x", space = "free_x")
+
+```
+
+
+

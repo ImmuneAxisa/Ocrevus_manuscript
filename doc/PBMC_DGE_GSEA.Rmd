@@ -1,0 +1,1554 @@
+---
+title: "DGE and GSEA on PBMC clusters, with focus CD16 monocytes (cluster 33)"
+author: "PPA"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: 
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    df_print: paged
+geometry: margin=0.5in
+header-includes:
+   - \usepackage{subfig}
+   - \usepackage{float}
+---
+
+
+```{r setup, include=FALSE}
+##########################
+## Packages and options ##
+##########################
+
+library(gridExtra)
+library(knitr)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(stringr)
+library(ggplot2)
+library(ggExtra)
+library(stats)
+# library(RColorBrewer)
+library(viridis)
+library(scales)
+library(ggrepel)
+library(circlize)
+library(RColorBrewer)
+library(gplots)
+library(cowplot)
+library(gtable)
+library(data.table)
+library(Seurat)
+library(hdf5r)
+library(ggsci)
+library(ggridges)
+library(forcats)
+library(kableExtra)
+library(sp)
+# library(FactoMineR)
+# library(factoextra)
+library(wesanderson)
+library(magrittr)
+library(tidyHeatmap)
+library(colorspace)
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.pos = 'H')
+knitr::opts_chunk$set(dev = 'png', dpi = 300)
+
+#set root directory to be one level up of the current directory
+#knitr::opts_knit$set(root.dir = '.')
+
+#Caching option when tweaking the knitting
+knitr::opts_chunk$set(cache = T)
+
+WRITE_FILES <- FALSE
+
+
+##################
+## ggplot theme ##
+##################
+
+theme_mrl <- function(x = 1) {
+  theme_minimal() +
+    theme(
+      axis.line = element_line(),
+      axis.ticks.x = element_line(),
+      axis.ticks.y = element_line(),
+      axis.text.x = element_text(size = 12*x,face = "bold", angle = 45, vjust = 0.9, hjust=0.9),
+      axis.text.y = element_text(size = 12*x,face = "bold"),
+      axis.title.x = element_text(size = 12*x,face = "bold"),
+      axis.title.y = element_text(size = 12*x,face = "bold"),
+      strip.background = element_rect(fill="gray20", colour="gray20", linetype="solid"),
+                                      strip.text = element_text(size=12*x, colour="white", face="bold"),
+                                      legend.title = element_text(size=14*x, face = "bold"),
+                                      legend.text = element_text(size=12*x, color="gray20", face="bold"),
+      legend.background = element_rect(fill = "transparent", colour = "transparent"),
+      plot.title =  element_text(hjust=0.5, vjust=2, face="bold"),
+      plot.subtitle = element_text(hjust=0.5, vjust=3, face="italic"),
+      plot.caption = element_text(hjust = 0, face = "italic")
+                                      )
+}
+
+
+opts <- options()  # save old options
+
+options(ggplot2.continuous.colour="viridis")
+options(ggplot2.continuous.fill = "viridis")
+
+palette <- c(pal_rickandmorty()(12),pal_jco()(10), pal_futurama()(11), pal_tron()(7))
+
+
+
+options(bitmapType = 'cairo', device = 'png')
+```
+
+
+```{r}
+source("src/wrapper_scripts/results_annotations.R")
+
+pbmc_deg_figs <- list()
+```
+
+
+
+
+
+# Second run of DGE after contaminant removal for cluster 33
+
+## MELD predictor
+
+```{r, fig.width=15}
+#####
+
+nebula_results <- readRDS("results/PBMC/DGE/nebula_myeloid_results_v3_cluster33_NoContaminants.rds")
+
+
+nebula_cluster33 <- nebula_results[[1]][["summary"]]
+
+keep_col <- ! grepl("donor", colnames(nebula_cluster33)) # remove data on coeff for donor
+
+
+nebula_cluster33 <- nebula_cluster33[,keep_col]
+
+nebula_cluster33$fdr_t6M <- p.adjust(nebula_cluster33$p_t6M, "fdr")
+
+shrinkage <- ashr::ash(nebula_cluster33$logFC_t6M, nebula_cluster33$se_t6M, mixcompdist = "normal")
+
+#nebula_cluster33$slogFC_t6M<- 
+
+ggplot(nebula_cluster33, aes(log10(avg_expr), logFC_t6M, size = -log10(fdr_t6M))) +
+  geom_point(aes(color = fdr_t6M < 0.05)) +
+  geom_density2d() +
+  geom_text_repel(data = nebula_cluster33 %>% dplyr::filter(fdr_t6M < 0.05 & grepl("CCL|CXCL", gene)), aes(label = gene)) 
+
+
+ggplot(nebula_cluster33, aes(log10(avg_expr), logFC_t6M, size = -log10(fdr_t6M))) +
+  geom_point(aes(color = fdr_t6M < 0.05)) +
+  #geom_density2d() +
+  geom_text_repel(data = nebula_cluster33 %>% dplyr::filter(fdr_t6M < 0.05 & grepl("CCL|CXCL", gene)), aes(label = gene)) +
+  facet_grid(.~ gene %in% rownames(readRDS("results/PBMC/CSF_analysis/Jess_bits/glm_Mo_2_BvF.heatmap_matrix.rds"))) +
+  scale_y_continuous(limits = c(-10,10), oob = squish)
+
+nebula_cluster33 %>% 
+  dplyr::filter(fdr_t6M < 0.05 &gene %in% rownames(readRDS("results/CSF_analysis/Jess_bits/glm_Mo_2_BvF.heatmap_matrix.rds"))) %>%
+  pull(gene)
+
+
+ashr_fit_norm <- ashr::ash(nebula_cluster33$logFC_t6M, nebula_cluster33$se_t6M, mixcompdist = "normal", method = "shrink")
+ashr_fit_fdr <- ashr::ash(nebula_cluster33$logFC_t6M, nebula_cluster33$se_t6M, mixcompdist = "normal", method = "fdr")
+
+#ashr::plot_diagnostic(ashr_fit_fdr)
+
+qplot(ashr_fit_fdr$result$svalue, ashr_fit_norm$result$svalue) + geom_abline() + scale_y_log10() +scale_x_log10()
+
+nebula_cluster33 <- nebula_cluster33 %>%
+  dplyr::select(matches("t6M|gene|avg")) %>%
+  cbind(.,ashr_fit_fdr$result)
+
+
+ggplot(nebula_cluster33,aes(logFC_t6M, PosteriorMean)) +
+  geom_point()
+
+ggplot(nebula_cluster33,aes(avg_expr, PosteriorMean)) +
+  geom_point() +
+  scale_x_log10()
+
+nebula_cluster33 %>%
+  dplyr::filter(p_t6M < 0.05) %>%
+  ggplot(aes(fdr_t6M, lfdr)) +
+  geom_point(aes(color = 1/ sebetahat)) +
+  geom_abline() +
+  geom_hline(yintercept = 0.05) +
+  geom_vline(xintercept = 0.05) +
+  theme(aspect.ratio = 1)
+
+
+nebula_cluster33 %>%
+  dplyr::filter(p_t6M < 0.05) %>%
+  ggplot(aes(fdr_t6M, lfdr)) +
+  geom_point(aes(color = abs(PosteriorMean))) +
+  geom_abline() +
+  geom_hline(yintercept = 0.05) +
+  geom_vline(xintercept = 0.05) +
+  theme(aspect.ratio = 1)
+
+
+
+
+nebula_cluster33 %>%
+  dplyr::filter(p_t6M < 0.05) %>%
+  ggplot(aes(svalue, fdr_t6M)) +
+  geom_point(aes(color = log10(avg_expr))) +
+  geom_abline() +
+  geom_hline(yintercept = 0.05) +
+  geom_vline(xintercept = 0.05) +
+  theme(aspect.ratio = 1) +
+  scale_x_log10() +
+  scale_y_log10()
+
+```
+
+
+
+## Label predictor
+
+
+```{r, fig.width=10}
+#####
+
+
+nebula_results <- readRDS("./results/PBMC/DGE/nebula_myeloid_results_v3_cluster33_NoContaminants_labelPred.rds")
+
+
+nebula_cluster33 <- nebula_results[[1]][["summary"]]
+
+keep_col <- ! grepl("donor", colnames(nebula_cluster33)) # remove data on coeff for donor
+
+
+nebula_cluster33 <- nebula_cluster33[, keep_col]
+
+nebula_cluster33$fdr_treatmentt6M <-
+  p.adjust(nebula_cluster33$p_treatmentt6M, "fdr")
+
+shrinkage <-
+  ashr::ash(
+    nebula_cluster33$logFC_treatmentt6M,
+    nebula_cluster33$se_treatmentt6M,
+    mixcompdist = "normal"
+  )
+
+#nebula_cluster33$slogFC_t6M<- 
+
+ggplot(nebula_cluster33,
+       aes(log10(avg_expr), logFC_treatmentt6M, size = -log10(fdr_treatmentt6M))) +
+  geom_point(aes(color = fdr_treatmentt6M < 0.05)) +
+  geom_density2d() +
+  geom_text_repel(data = nebula_cluster33 %>% dplyr::filter(fdr_treatmentt6M < 0.05 &
+                                                              grepl("CCL|CXCL", gene)),
+                  aes(label = gene))
+
+
+ggplot(nebula_cluster33,
+       aes(
+         log10(avg_expr),
+         logFC_treatmentt6M,
+         size = -log10(fdr_treatmentt6M)
+       )) +
+  geom_point(aes(color = fdr_treatmentt6M < 0.05)) +
+  #geom_density2d() +
+  geom_text_repel(data = nebula_cluster33 %>% dplyr::filter(fdr_treatmentt6M < 0.05 &
+                                                              grepl("CCL|CXCL", gene)),
+                  aes(label = gene)) +
+  facet_grid(. ~ gene %in% rownames(
+    readRDS(
+      "results/CSF_analysis/Jess_bits/glm_Mo_2_BvF.heatmap_matrix.rds"
+    )
+  )) +
+  scale_y_continuous(limits = c(-10, 10), oob = squish)
+
+nebula_cluster33 %>%
+  dplyr::filter(fdr_treatmentt6M < 0.05 &
+                  gene %in% rownames(
+                    readRDS(
+                      "results/CSF_analysis/Jess_bits/glm_Mo_2_BvF.heatmap_matrix.rds"
+                    )
+                  )) %>%
+  pull(gene)
+
+
+#ashr_fit_norm <- ashr::ash(nebula_cluster33$logFC_t6M, nebula_cluster33$se_t6M, mixcompdist = "normal", method = "shrink")
+ashr_fit_fdr <-
+  ashr::ash(
+    nebula_cluster33$logFC_treatmentt6M,
+    nebula_cluster33$se_treatmentt6M,
+    mixcompdist = "normal",
+    method = "fdr"
+  )
+
+#ashr::plot_diagnostic(ashr_fit_fdr)
+
+
+
+nebula_cluster33 <- nebula_cluster33 %>%
+  dplyr::select(matches("t6M|gene|avg")) %>%
+  cbind(.,ashr_fit_fdr$result)
+
+
+ggplot(nebula_cluster33,aes(logFC_treatmentt6M, PosteriorMean)) +
+  geom_point()
+
+ggplot(nebula_cluster33,aes(avg_expr, PosteriorMean)) +
+  geom_point() +
+  scale_x_log10()
+
+nebula_cluster33 %>%
+  dplyr::filter(p_treatmentt6M < 0.05) %>%
+  ggplot(aes(fdr_treatmentt6M, lfdr)) +
+  geom_point(aes(color = 1/ sebetahat)) +
+  geom_abline() +
+  geom_hline(yintercept = 0.05) +
+  geom_vline(xintercept = 0.05) +
+  theme(aspect.ratio = 1)
+
+
+nebula_cluster33 %>%
+  dplyr::filter(p_treatmentt6M < 0.05) %>%
+  ggplot(aes(fdr_treatmentt6M, lfdr)) +
+  geom_point(aes(color = abs(PosteriorMean))) +
+  geom_abline() +
+  geom_hline(yintercept = 0.05) +
+  geom_vline(xintercept = 0.05) +
+  theme(aspect.ratio = 1)
+
+
+
+
+nebula_cluster33 %>%
+  dplyr::filter(p_treatmentt6M < 0.05) %>%
+  ggplot(aes(svalue, fdr_treatmentt6M)) +
+  geom_point(aes(color = log10(avg_expr))) +
+  geom_abline() +
+  geom_hline(yintercept = 0.05) +
+  geom_vline(xintercept = 0.05) +
+  theme(aspect.ratio = 1) +
+  scale_x_log10() +
+  scale_y_log10()
+
+
+gene_display <- c("IL1R2", "TNFRSF10C", "IL21R", "CD93", "S100A8", 
+                  "IRF4", "KLF4", "IKZF1", "CD81", "CD40", "IRF2", "JAK3", "TLR4", "RXRA",
+                  "PTGES", "CXCL8", "CD83", "CCL5", "NFKBIA", "NFKBIE", "TRAF1" , "REL", "RELB", "NFKB2",
+                  "HIF1A", "TNF", "PTGER4", "CXCL16", "ITGA2B", "CXCL2", "ITGB2", "NLRP3")
+
+MAplot <- nebula_cluster33 %>%
+  mutate(cat = ifelse(fdr_treatmentt6M < 0.05 & PosteriorMean > 0, "up", 
+                      ifelse(fdr_treatmentt6M < 0.05 & PosteriorMean < 0, "dn", "ns"))) %>%
+  arrange(-fdr_treatmentt6M) %>%
+  {
+    ggplot(., aes(avg_expr,PosteriorMean)) +
+      geom_point(aes(color = cat)) +
+      theme_mrl()  +
+      stat_density2d(aes(fill = stat(level)), breaks = seq(1,6,0.1), geom = "polygon") +
+      scale_fill_gradient(low = "dark grey", high = "black") +
+      scale_y_continuous(limits = c(-1, 1), oob = squish) +
+      scale_x_log10() +
+      scale_color_manual(values = c(ns = "dark grey", up = "red4", dn = "navy")) +
+      geom_label_repel(
+        #data = . %>% dplyr::filter(gene %in% gene_display & cat == "dn"),
+        aes(label = ifelse(gene %in% gene_display & cat == "dn",gene, "")),
+        color = "navy",
+        alpha = 1,
+        force = 30,
+        max.overlaps = 2000,
+        segment.size = 0.1,
+        min.segment.length = 0,
+        segment.color = "black",
+        ylim = c(NA, -0.5)
+      ) +
+      geom_point(
+        data = . %>% dplyr::filter(gene %in% gene_display & cat == "dn"),
+        shape = 21,
+        color = "black",
+        size = 2,
+        fill = "navy"
+      ) +
+      geom_label_repel(
+        #data = . %>% dplyr::filter(gene %in% gene_display & cat == "up"),
+        aes(label = ifelse(gene %in% gene_display & cat == "up",gene, "")),
+        color = "red4",
+        alpha = 1,
+        force = 30,
+        max.overlaps = 2000,
+        segment.size = 0.1,
+        min.segment.length = 0,
+        segment.color = "black",
+        ylim = c(0.5,NA)
+      ) +
+      geom_point(
+        data = . %>% dplyr::filter(gene %in% gene_display & cat == "up"),
+        shape = 21,
+        color = "black",
+        size = 2,
+        fill = "red4"
+      ) +
+      labs(x = "log10 average gene expression", y = "shrunken Log Fold Change") +
+      theme(axis.text = element_text(color="black"),
+            legend.position = "none",
+            panel.border = element_rect(color ="black",fill=NA),
+            axis.line = element_blank(),
+            aspect.ratio = 1)
+  }
+MAplot
+pbmc_deg_figs[["MAplot"]] <- MAplot
+```
+
+
+## GSEA on blood dataset
+
+
+### hallmark GSEA
+
+#### with shrunken coeffs
+
+```{r, fig.width=10}
+library(fgsea)
+detach("package:dplyr", unload = TRUE)
+library(clusterProfiler)
+library(dplyr)
+library(enrichplot)
+source("src/wrapper_scripts/gseaplot2_PPAmod.R")
+
+#function to turn named list into a data frame where 
+#one column contains the name of the vector
+#and the other is the vector values, one by row
+list_to_df <- function(listfordf){
+  if(!is.list(listfordf)) stop("it should be a list")
+  
+  df <- list(list.element = listfordf)
+  class(df) <- c("tbl_df", "data.frame")
+  attr(df, "row.names") <- .set_row_names(length(listfordf))
+  
+  if (!is.null(names(listfordf))) {
+    df$name <- names(listfordf)
+  }
+  
+  df
+}
+
+
+
+blood_ranks <- nebula_cluster33 %>%
+    mutate(Gene_Name = gene) %>%
+    dplyr::select(Gene_Name, PosteriorMean) %>%
+    dplyr::filter(is.na(Gene_Name) == FALSE) %>%
+    arrange(-PosteriorMean)
+
+#Convert variant results to a vector:
+blood_ranks <- deframe(blood_ranks)
+
+
+pathways.hallmark <-
+    gmtPathways(
+      "data/h.all.v6.2.symbols.gmt"
+    )
+
+pathways.hallmark <- list_to_df(pathways.hallmark) %>%
+    unnest() %>%
+  dplyr::select(Term = name, Gene = list.element)
+
+
+gse <-
+  GSEA(
+    geneList = blood_ranks,
+    nPerm = 50000,
+    minGSSize = 50,
+    maxGSSize = 5000,
+    TERM2GENE = pathways.hallmark,
+    pvalueCutoff = 1
+  )
+
+
+
+gseResult33 <- gse@result %>%
+  separate(leading_edge,
+           into = c("tags", "list", "signal"),
+           sep = ",") %>%
+  mutate(Overlap = as.integer(gsub("[^0-9.-]", "", tags))) %>%
+  mutate(list = as.integer(gsub("[^0-9.-]", "", list))) %>%
+  mutate(signal = as.integer(gsub("[^0-9.-]", "", signal)))
+
+CD16monoGSEA <- gseResult33 %>%
+  dplyr::mutate(ID = gsub("_", " ", ID)) %>%
+  dplyr::filter(p.adjust < 0.1) %>%
+  ggplot(aes(
+    x = reorder(ID, NES),
+    y = NES,
+    size = signal,
+    fill = -log10(p.adjust)
+  )) +
+  geom_point(shape = 21,
+             stroke = 0.1,
+             color = "black") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(limits = c(-max(abs(gseResult33$NES)), max(abs(gseResult33$NES)))) +
+  coord_flip() +
+  scale_size_continuous(range = c(1, 6)) +
+  scale_fill_viridis(limits = c(1, NA)) +
+  labs(x = "", y = "Normalized enrichment score") +
+  scale_x_discrete(
+    position = "bottom",
+    labels = function(x)
+      str_wrap(x, width = 20)
+  ) +
+  theme_mrl(0.6) +
+  theme(
+    axis.title.y = element_blank(),
+    axis.ticks = element_line(),
+    axis.line = element_blank(),
+    axis.text = element_text(colour = "black"),
+    legend.position = "right",
+    panel.border = element_rect(
+      colour = "black",
+      fill = NA,
+      size = 0.5
+    ),
+    aspect.ratio = 1,
+    legend.key.size = unit(0.3, "cm")
+  )
+
+CD16monoGSEA
+pbmc_deg_figs[["CD16monoGSEA"]] <- CD16monoGSEA
+
+```
+
+
+#### with raw coeffs
+
+```{r, fig.width=10}
+blood_ranks <- nebula_cluster33 %>%
+    mutate(Gene_Name = gene) %>%
+    dplyr::select(Gene_Name, logFC_treatmentt6M) %>%
+    dplyr::filter(is.na(Gene_Name) == FALSE) %>%
+    arrange(-logFC_treatmentt6M)
+
+#Convert variant results to a vector:
+blood_ranks <- deframe(blood_ranks)
+
+
+pathways.hallmark <-
+    gmtPathways(
+      "data/h.all.v6.2.symbols.gmt"
+    )
+
+pathways.hallmark <- list_to_df(pathways.hallmark) %>%
+    unnest() %>%
+  dplyr::select(Term = name, Gene = list.element)
+
+
+gse <-
+  GSEA(
+    geneList = blood_ranks,
+    nPerm = 50000,
+    minGSSize = 50,
+    maxGSSize = 5000,
+    TERM2GENE = pathways.hallmark,
+    pvalueCutoff = 1
+  )
+
+
+
+gseResult33_raw_coeff <- gse@result %>%
+  separate(leading_edge,
+           into = c("tags", "list", "signal"),
+           sep = ",") %>%
+  mutate(Overlap = as.integer(gsub("[^0-9.-]", "", tags))) %>%
+  mutate(list = as.integer(gsub("[^0-9.-]", "", list))) %>%
+  mutate(signal = as.integer(gsub("[^0-9.-]", "", signal)))
+
+CD16monoGSEA <- gseResult33_raw_coeff %>%
+  dplyr::mutate(ID = gsub("_", " ", ID)) %>%
+  dplyr::filter(p.adjust < 0.1) %>%
+  ggplot(aes(
+    x = reorder(ID, NES),
+    y = NES,
+    size = signal,
+    fill = -log10(p.adjust)
+  )) +
+  geom_point(shape = 21,
+             stroke = 0.1,
+             color = "black") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(limits = c(-max(abs(gseResult33$NES)), max(abs(gseResult33$NES)))) +
+  coord_flip() +
+  scale_size_continuous(range = c(1, 6)) +
+  scale_fill_viridis(limits = c(1, NA)) +
+  labs(x = "", y = "Normalized enrichment score") +
+  scale_x_discrete(
+    position = "bottom",
+    labels = function(x)
+      str_wrap(x, width = 20)
+  ) +
+  theme_mrl(0.6) +
+  theme(
+    axis.title.y = element_blank(),
+    axis.ticks = element_line(),
+    axis.line = element_blank(),
+    axis.text = element_text(colour = "black"),
+    legend.position = "right",
+    panel.border = element_rect(
+      colour = "black",
+      fill = NA,
+      size = 0.5
+    ),
+    aspect.ratio = 1,
+    legend.key.size = unit(0.3, "cm")
+  )
+
+CD16monoGSEA
+```
+
+
+#### Comparison of GSEA results between shrunken vs raw coefficients.
+
+
+```{r, fig.width=5}
+gseResult33_raw_coeff %>%
+  dplyr::select(ID, raw_NES = NES) %>%
+  left_join(gseResult33) %>%
+  ggplot(aes(NES, raw_NES)) +
+  geom_hex() +
+  geom_abline()
+ 
+
+p1 <-nebula_cluster33 %>%
+  ggplot(aes(avg_expr, abs(logFC_treatmentt6M))) +
+  geom_hex() +
+  scale_x_log10(labels = label_log()) +
+  scale_y_continuous(limits = c(NA,0.75), oob = oob_squish) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(x = "average gene expression", y = "log fold change", title = "uncorrected")
+  
+
+
+p2 <- nebula_cluster33 %>%
+  ggplot(aes(avg_expr, abs(PosteriorMean))) +
+  geom_hex() +
+  scale_x_log10(labels = label_log()) +
+  scale_y_continuous(limits = c(NA,0.75), oob = oob_squish) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(x = "average gene expression", y = "log fold change", title = "shrunken")
+
+p1 + p2 + patchwork::plot_layout(axes = "collect", guides = "collect")
+
+
+
+nebula_cluster33 %>%
+  ggplot(aes(rank(-logFC_treatmentt6M), rank(-PosteriorMean), z = avg_expr)) +
+  stat_summary_hex() +
+  scale_fill_viridis(trans = "log10") +
+  geom_smooth(method = "lm") +
+  geom_abline(color = "red")
+
+
+
+core_raw <-  gseResult33 %>%
+  dplyr::select(ID, shrunk_NES = NES) %>%
+  right_join(gseResult33_raw_coeff) %>%
+  mutate(flip = sign(NES) != sign(shrunk_NES)) %>%
+  dplyr::select(p.adjust, core_enrichment, flip) %>%
+  mutate(core_enrichment = str_split(core_enrichment, "\\/")) %>%
+  unnest() %>%
+  group_by(core_enrichment) %>%
+  mutate(signif = p.adjust < 0.1,
+            count = n(), 
+            flip = sum(flip) > 0) %>%
+  dplyr::rename(gene = core_enrichment) %>%
+  mutate(signif = replace_na(signif, FALSE)) %>%
+  right_join(nebula_cluster33) %>%
+  mutate(signif = replace_na(signif, FALSE),
+         cat = "raw")
+
+
+
+  
+
+
+core_shrunk <- gseResult33 %>%
+  dplyr::select(p.adjust, core_enrichment) %>%
+  mutate(core_enrichment = str_split(core_enrichment, "\\/")) %>%
+  unnest() %>%
+  group_by(core_enrichment) %>%
+  mutate(signif = p.adjust < 0.1,
+            count = n()) %>%
+  dplyr::rename(gene = core_enrichment) %>%
+  right_join(nebula_cluster33) %>%
+  mutate(signif = replace_na(signif, FALSE),
+         cat = "shrunk")
+
+
+# get shared core genes
+core_raw_genes <- core_raw %>%
+  dplyr::filter(signif) %>%
+  pull(gene) %>%
+  unique()
+
+core_shrunk_genes <- core_shrunk %>%
+  dplyr::filter(signif) %>%
+  pull(gene) %>%
+  unique()
+
+shared_core_genes <- intersect(core_raw_genes, core_shrunk_genes)
+
+
+p1 <- core_raw %>%
+  mutate(concordance = gene %in% shared_core_genes & signif) %>%
+  ggplot(aes(signif, avg_expr, fill = concordance)) +
+  geom_violin() +
+  scale_y_log10()
+
+p2 <- core_shrunk %>%
+  mutate(concordance = gene %in% shared_core_genes & signif) %>%
+  ggplot(aes(signif, avg_expr, fill = concordance)) +
+  geom_violin() +
+  scale_y_log10()
+
+p1 | p2
+```
+
+# Testing for enrichment in other clusters
+
+
+## effect size distributions
+
+inspect regression coefficient point estimates distribution for all clusters
+
+```{r, fig.width=15}
+nebula_results <- readRDS("results/PBMC/DGE/nebula_results_allClusters_labelPred_countCov.rds")
+
+
+
+nebula_results <- lapply(nebula_results, function(cluster_results) {
+  cluster_results <- cluster_results[["summary"]]
+    
+    keep_col <-
+      !grepl("donor", colnames(cluster_results)) # remove data on coeff for donor
+    
+    
+    cluster_results <- cluster_results[, keep_col]
+    
+    cluster_results$fdr_treatmentt6M <-
+      p.adjust(cluster_results$p_treatmentt6M, "fdr")
+    
+    shrinkage <-
+      ashr::ash(
+        cluster_results$logFC_treatmentt6M,
+        cluster_results$se_treatmentt6M,
+        mixcompdist = "normal"
+      )
+    
+    cluster_results <- cbind(cluster_results, shrinkage[["result"]])
+    
+})
+
+
+nebula_results$curated_clusters.33 <- nebula_cluster33
+
+nebula_results %>%
+  enframe("cluster", "res") %>%
+  unnest() %>%
+  dplyr::select(cluster, PosteriorMean) %>%
+  ggplot(aes(cluster, PosteriorMean)) +
+  geom_violin(scale = "width") +
+  stat_summary() +
+  scale_y_continuous(limits = c(-0.5,0.5), oob = squish) +
+  theme_mrl() +
+  geom_hline(yintercept = 0, linetype = "dashed")
+
+
+nebula_results <- lapply(nebula_results, dplyr::select, gene, avg_expr, logFC_treatmentt6M, p_treatmentt6M, fdr_treatmentt6M, shrunken_logFC = PosteriorMean)
+
+library(writexl)
+write_xlsx(nebula_results, "reviewing/SD2_pbmc_DGE.xlsx")
+```
+
+
+## GSEA on shrunk coefficients
+
+```{r, fig.width=15, eval = F}
+# no need to rerun GSEA every time, I saved the results to file
+
+pathways.hallmark <-
+    gmtPathways(
+      "data/h.all.v6.2.symbols.gmt"
+    )
+
+pathways.hallmark <- list_to_df(pathways.hallmark) %>%
+    unnest() %>%
+  dplyr::select(Term = name, Gene = list.element)
+
+
+gsea_results <- lapply(nebula_results, function(cluster_results) {
+  
+  blood_ranks <- cluster_results %>%
+    mutate(Gene_Name = gene) %>%
+    dplyr::select(Gene_Name, PosteriorMean) %>%
+    dplyr::filter(is.na(Gene_Name) == FALSE) %>%
+    arrange(-PosteriorMean)
+  
+  #Convert variant results to a vector:
+  blood_ranks <- deframe(blood_ranks)
+  
+  
+  
+  
+  
+  gse <-
+    GSEA(
+      geneList = blood_ranks,
+      nPerm = 50000,
+      minGSSize = 50,
+      maxGSSize = 5000,
+      TERM2GENE = pathways.hallmark,
+      pvalueCutoff = 1
+    )
+  
+  
+  
+  gseResult <- gse@result %>%
+    separate(leading_edge,
+             into = c("tags", "list", "signal"),
+             sep = ",") %>%
+    mutate(Overlap = as.integer(gsub("[^0-9.-]", "", tags))) %>%
+    mutate(list = as.integer(gsub("[^0-9.-]", "", list))) %>%
+    mutate(signal = as.integer(gsub("[^0-9.-]", "", signal)))
+  
+  
+  
+  
+})
+
+```
+
+
+### GSEA on raw coefficients
+
+```{r, fig.width=15, eval = F}
+gsea_results_raw_LFC <- lapply(nebula_results, function(cluster_results) {
+  
+  blood_ranks <- cluster_results %>%
+    mutate(Gene_Name = gene) %>%
+    dplyr::select(Gene_Name, logFC_treatmentt6M) %>%
+    dplyr::filter(is.na(Gene_Name) == FALSE) %>%
+    arrange(-logFC_treatmentt6M)
+  
+  #Convert variant results to a vector:
+  blood_ranks <- deframe(blood_ranks)
+  
+  
+  
+  
+  
+  gse <-
+    GSEA(
+      geneList = blood_ranks,
+      nPerm = 50000,
+      minGSSize = 50,
+      maxGSSize = 5000,
+      TERM2GENE = pathways.hallmark,
+      pvalueCutoff = 1
+    )
+  
+  
+  
+  gseResult <- gse@result %>%
+    separate(leading_edge,
+             into = c("tags", "list", "signal"),
+             sep = ",") %>%
+    mutate(Overlap = as.integer(gsub("[^0-9.-]", "", tags))) %>%
+    mutate(list = as.integer(gsub("[^0-9.-]", "", list))) %>%
+    mutate(signal = as.integer(gsub("[^0-9.-]", "", signal)))
+  
+  
+  
+  
+})
+
+
+gsea_results_raw_LFC$curated_clusters.33 <- gseResult33_raw_coeff
+
+
+
+```
+
+
+
+### Effect of raw vs shrunk coefficients ranking on GSEA results
+
+
+#### Enrichment correlation
+
+```{r}
+
+gsea_raw <- gsea_results_raw_LFC %>%
+  enframe("cluster") %>%
+  unnest(value) %>%
+  dplyr::select(cluster, ID, NES_raw = NES, padj_raw = p.adjust)
+
+gsea_original <- gsea_results %>%
+  enframe("cluster") %>%
+  unnest(value) %>%
+  dplyr::select(cluster, ID,NES, padj = p.adjust)
+
+gsea_comparison <- full_join(gsea_original, gsea_raw)
+
+gsea_comparison %>%
+  rowwise() %>%
+  #dplyr::filter(padj < 0.1 | padj_raw < 0.1) %>%
+  ggplot(aes(NES, NES_raw)) +
+  geom_hex() +
+  facet_grid(padj < 0.1~padj_raw < 0.1, labeller = label_both) +
+  theme_mrl()
+
+
+gsea_comparison %>% 
+  mutate(signif = padj< 0.1, signif_raw = padj_raw < 0.1) %>%
+  group_by(signif, signif_raw) %>%
+  dplyr::count()
+
+```
+
+
+#### Overlap of detected genesets
+
+
+```{r}
+
+gsea_raw <- gsea_results_raw_LFC %>%
+  enframe("cluster") %>%
+  unnest(value) %>%
+  dplyr::filter(p.adjust < 0.1) %>%
+  group_by(cluster) %>%
+  summarize(ID_raw = list(ID))
+
+gsea_original <- gsea_results %>%
+  enframe("cluster") %>%
+  unnest(value) %>%
+  dplyr::filter(p.adjust < 0.1) %>%
+  group_by(cluster) %>%
+  summarize(ID_shrunk = list(ID))
+
+gsea_comparison <- full_join(gsea_original, gsea_raw) %>%
+  mutate(overlap = purrr::map2(ID_raw, ID_shrunk, \(x,y) length(intersect(x,y)) / min(length(x),length(y))),
+         n_diff_shrunk = purrr::map(ID_shrunk, length),
+         n_diff_raw = purrr::map(ID_raw, length)) %>%
+  unnest(overlap, n_diff_shrunk, n_diff_raw)
+
+
+gsea_comparison %>%
+  ggplot(aes(n_diff_shrunk, overlap)) +
+  geom_hex()
+
+
+gsea_comparison %>%
+  ggplot(aes(n_diff_shrunk, n_diff_raw)) +
+  geom_hex() +
+  geom_text_repel(aes(label = str_remove(cluster, "^.*\\."))) +
+  geom_abline()
+
+
+gsea_comparison %>%
+  mutate(overlap = ifelse(is.na(overlap), 0, overlap)) %>%
+  pull(overlap) %>%
+  summary()
+
+
+gsea_comparison %>%
+  mutate(diff = n_diff_raw - n_diff_shrunk) %>%
+  pull(diff) %>%
+  sum()
+```
+
+
+
+#### Average expression of core enrichment genes
+
+
+```{r, fig.width=5}
+
+avg_exprs <- nebula_results %>%
+  enframe("cluster") %>%
+  unnest(value) %>%
+  dplyr::select(cluster, gene, avg_expr)
+
+gsea_raw <- gsea_results_raw_LFC %>%
+  enframe("cluster") %>%
+  unnest(value) %>%
+  dplyr::filter(p.adjust < 0.1) %>%
+  dplyr::select(cluster, ID, core_enrichment) %>%
+  mutate(core_enrichment = str_split(core_enrichment, "\\/")) %>%
+  unnest(core_enrichment) %>%
+  group_by(core_enrichment) %>%
+  dplyr::rename(gene = core_enrichment) %>%
+  mutate(raw = TRUE)
+
+
+gsea_original <- gsea_results %>%
+  enframe("cluster") %>%
+  unnest(value) %>%
+  dplyr::filter(p.adjust < 0.1) %>%
+  dplyr::select(cluster, ID, core_enrichment) %>%
+  mutate(core_enrichment = str_split(core_enrichment, "\\/")) %>%
+  unnest(core_enrichment) %>%
+  group_by(core_enrichment) %>%
+  dplyr::rename(gene = core_enrichment) %>%
+  mutate(shrunk = TRUE)
+
+
+gsea_comparison <- full_join(gsea_raw, gsea_original)
+
+gsea_comparison <- full_join(gsea_comparison, avg_exprs)
+
+gsea_comparison <- gsea_comparison %>%
+  group_by(cluster, gene) %>%
+  mutate(raw = sum(raw, na.rm = TRUE) > 0,
+         shrunk = sum(shrunk, na.rm = TRUE) > 0)
+
+gsea_comparison <- gsea_comparison %>%
+  mutate(status = ifelse(raw == shrunk, "concordant", "discordant"),
+         cat = case_when(
+           raw & shrunk ~ "core enrichment",
+           !raw & shrunk ~ "core enrichment with shrunk coefficients",
+           raw & !shrunk ~ "core enrichment with raw coefficients",
+           !raw & !shrunk ~ "no core enrichment"
+         ))
+
+
+gsea_comparison %>%
+  dplyr::select(-ID) %>%
+  distinct() %>%
+  ggplot(aes(cat,avg_expr)) +
+  geom_violin(fill = "grey") +
+  facet_grid(status~., scales = "free_y") +
+  scale_x_discrete(labels = scales::label_wrap(22)) +
+  scale_y_log10(labels = label_log()) +
+  labs(x = NULL, y = "average gene expression") +
+  coord_flip() +
+  theme_bw()
+
+
+gsea_comparison %>%
+  dplyr::select(-ID) %>%
+  distinct() %>%
+  pull(cat) %>%
+  table() 
+
+
+828/(828+2083)
+7403/(7403+2083)
+2083/(2083+828+7403)
+```
+
+
+## plot GSEA results across clusters
+
+
+```{r, fig.width=15}
+
+
+gsea_results <- readRDS("results/PBMC/enrichment/GSEA_blood_all_cluster_and_corrected_cluster33.rds")
+
+
+
+enframe(gsea_results, "curated_clusters", "results") %>%
+  unnest() %>%
+  group_by(ID) %>%
+  dplyr::filter(sum(p.adjust < 0.1) > 0) %>%
+  ungroup() %>%
+  ggplot(aes(ID, curated_clusters)) +
+  geom_tile(aes(fill = NES)) +
+  scale_fill_gradient2(high = "red", low = "blue") +
+  theme_mrl() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
+
+
+
+
+
+
+
+cell_fun_signif <- function(j, i, x, y, width, height, fill) {
+  .data_drame = .data
+  
+  print(head(.data))
+  
+  # Comply with CRAN NOTES
+  . = NULL
+  column = NULL
+  row = NULL
+  
+  # Make col names
+  # Column names
+  .horizontal = .data@arguments$.horizontal
+  .vertical = .data@arguments$.vertical
+  .abundance = .data@arguments$.abundance
+  
+  # Append which cells have to be signed
+  
+  signif <- .data_drame %>%
+    droplevels() %>%
+    mutate(
+      column = !!.horizontal %>%  as.factor()  %>%  as.integer(),
+      row = !!.vertical  %>%  as.factor() %>% as.integer()
+    ) %>%
+    dplyr::filter(column == j & row == i & p.adjust < 0.1) %>%
+    nrow()
+  
+  if(signif == 1) {
+    
+    grid.text("*")
+  }
+    
+  
+  
+  
+}
+
+
+
+library(ComplexHeatmap)
+# customisation of the tidyheatmap as_complexHeatmap function
+# to modify the layer_fun and specify how to highlight specific cells.
+as_CH <- function(tidyHeatmap){
+	
+	# Fix CRAN notes
+	. = NULL
+	index_column_wise = NULL
+	shape = NULL
+	
+	tidyHeatmap@input$top_annotation = 
+		c(
+			tidyHeatmap@group_top_annotation,
+			tidyHeatmap@top_annotation %>% annot_to_list()
+		) %>%
+		list_drop_null() %>%
+		when(
+			
+			# is.null needed for check Windows CRAN servers
+			length(.) %>% gt(0) && !is.null(.) ~ do.call("columnAnnotation", . ),
+			~ NULL
+		)
+	
+	tidyHeatmap@input$left_annotation = 
+		c(
+			tidyHeatmap@group_left_annotation,
+			tidyHeatmap@left_annotation %>% annot_to_list()
+		) %>%
+		list_drop_null()  %>%
+		when(
+			
+			# is.null needed for check Windows CRAN servers
+			length(.) %>% gt(0) && !is.null(.)	~ do.call("rowAnnotation", . ),
+			~ NULL
+		)
+	
+	# On-top layer
+	tidyHeatmap@input$layer_fun = function(j, i, x, y, w, h, fill) {
+		ind = 
+			tibble(row = i, column = j) %>%
+			rowid_to_column("index_column_wise") %>%
+			
+			# Filter just points to label
+			inner_join(tidyHeatmap@layer_symbol, by = c("row", "column")) %>%
+			select(`index_column_wise`, `shape`)
+		
+		if(nrow(ind)>0){
+			grid.rect(
+				x[ind$index_column_wise], y[ind$index_column_wise],
+				width = w, height = h,
+				gp = gpar(col = "black", fill = NA)
+			)
+		  grid.text("*", 	x[ind$index_column_wise], y[ind$index_column_wise])
+		  }
+	}
+	
+	return(do.call(Heatmap, tidyHeatmap@input))
+}
+# get function into package environment so it can access internals
+environment(as_CH) <- asNamespace('tidyHeatmap')
+
+# draft hm
+# thm <- enframe(gsea_results, "curated_clusters", "results") %>%
+#   unnest() %>%
+#   group_by(ID) %>%
+#   dplyr::filter(sum(p.adjust < 0.1) > 0) %>%
+#   ungroup() %>%
+#   mutate(ID = gsub("HALLMARK_", "", ID),
+#          curated_clusters = as.numeric(gsub("curated_clusters\\.", "", curated_clusters))) %>%
+#   left_join(cluster_labels_table) %>%
+#   mutate(curated_clusters = paste(curated_clusters, fine_clusters)) %>%
+#   heatmap(ID, curated_clusters, NES, palette_value = circlize::colorRamp2(c(-3, 0, 3), c("blue", "white", "red")), column_names_rot = 30) %>%
+#   add_tile(coarse_clusters) %>%
+#   layer_square(p.adjust < 0.1)
+
+
+
+thm_data <- enframe(gsea_results, "curated_clusters", "results") %>%
+  unnest() %>%
+  group_by(ID) %>%
+  mutate(ID_count = sum(p.adjust < 0.1)) %>%
+  ungroup() %>%
+  group_by(curated_clusters) %>%
+  mutate(cluster_count = sum(p.adjust < 0.1)) %>%
+  ungroup() %>%
+  mutate(ID = gsub("HALLMARK_", "", ID),
+         curated_clusters = as.numeric(gsub(
+           "curated_clusters\\.", "", curated_clusters
+         ))) %>%
+  left_join(cluster_labels_table) %>%
+  #mutate(curated_clusters = paste(curated_clusters, fine_clusters)) %>%
+  dplyr::filter(ID_count > 2
+                & cluster_count > 2
+                & coarse_clusters != "other")
+
+pal <- palette_master[pull(thm_data,cell_type) %>% unique()]
+pal <- pal[sort(names(pal))]
+thm <- thm_data %>%
+  #relocate(fine_clusters, .before = everything()) %>%
+  #arrange(coarse_clusters, cell_type) %>%
+  mutate(fine_clusters = reorder(as.factor(fine_clusters), curated_clusters)) %>%
+  group_by(coarse_clusters) %>%
+  heatmap(.,
+    ID,
+    fine_clusters,
+    NES,
+    palette_value = circlize::colorRamp2(c(-3, 0, 3), c("blue", "white", "red")),
+    column_names_rot = 45,
+    palette_grouping = list(palette_coarse)
+  ) %>%
+  #add_tile(cell_type, palette = pal) %>%
+  #add_tile(cluster_count) %>%
+  add_tile(ID_count, annotation_name_side = "top") %>%
+  layer_square(p.adjust < 0.1)
+
+
+ht_opt(HEATMAP_LEGEND_PADDING = unit(10, "mm"))
+hmGSEA <- grid.grabExpr(draw(
+  as_CH(thm),
+  heatmap_legend_side = "right",
+  merge_legends = TRUE,
+  padding = unit(c(10, 10, 10, 10), "mm")
+))
+grid.arrange(hmGSEA)
+pbmc_deg_figs[["hmGSEA"]] <- hmGSEA
+```
+
+
+## leading edge analysis
+
+### most occuring, and co-occuring LE genes
+
+Look at occurence patterns of leading edges (LE) genes across clusters. Only conserve LE genes with at least 10 occurences.
+
+```{r, fig.width=20}
+library(tidygraph)
+library(ggraph)
+
+jaccard <- function(a, b) {
+    intersection = length(intersect(a, b))
+    union = length(a) + length(b) - intersection
+    return (intersection/union)
+}
+
+LE_graph <- enframe(gsea_results, "curated_clusters", "results") %>%
+  unnest() %>%
+  dplyr::filter(p.adjust < 0.1 & ID == "HALLMARK_TNFA_SIGNALING_VIA_NFKB") %>%
+  dplyr::select(curated_clusters, core_enrichment) %>%
+  mutate(core_enrichment = str_split(core_enrichment, "\\/")) %>%
+  unnest() %>%
+  group_by(core_enrichment) %>%
+  summarise(curated_clusters = list(curated_clusters)) %>%
+  deframe()
+
+pairs <- names(LE_graph) %>%
+  combn(2, simplify = T)
+
+jaccard_values <- pairs %>%
+  apply(2, function(pair, graph) {
+    
+    set1 <- graph[[pair[1]]]
+    set2 <- graph[[pair[2]]]
+    
+    jaccard(set1, set2)
+  }, graph = LE_graph)
+
+
+jaccard_table <- rbind(pairs, jaccard_values) %>%
+  t() %>%
+  as_tibble() %>%
+  setNames(c("LE1", "LE2", "j_index")) %>%
+  mutate(j_index = as.numeric(j_index))
+
+
+
+LE_genes_n <- enframe(gsea_results, "curated_clusters", "results") %>%
+  unnest() %>%
+  dplyr::filter(p.adjust < 0.1 & ID == "HALLMARK_TNFA_SIGNALING_VIA_NFKB") %>%
+  dplyr::select(core_enrichment) %>%
+  mutate(core_enrichment = str_split(core_enrichment, "\\/")) %>%
+  unnest() %>%
+  group_by(core_enrichment) %>%
+  summarise(count = n())
+
+
+
+
+
+
+LE_graph <- jaccard_table %>%
+  dplyr::filter(j_index != 0) %>%
+  as_tbl_graph() %>%
+  activate("nodes") %>%
+  left_join(LE_genes_n, by = c("name" = "core_enrichment"))
+
+
+ggraph(LE_graph, layout = 'stress', weights = j_index) + 
+  geom_edge_link(aes(alpha = j_index), size = 0.1) + 
+  geom_node_label(aes(size = count, label = name, color = count > 10))
+
+
+
+
+
+```
+
+### most connected clusters by LE overlap
+
+```{r, fig.width=10}
+library(tidygraph)
+library(ggraph)
+
+jaccard <- function(a, b) {
+    intersection = length(intersect(a, b))
+    union = length(a) + length(b) - intersection
+    return (intersection/union)
+}
+
+overlap_score <- function(a, b) {
+    intersection = length(intersect(a, b))
+    union = min(length(a), length(b))
+    return (intersection/union)
+}
+
+LE_graph <- enframe(gsea_results, "curated_clusters", "results") %>%
+  unnest() %>%
+  dplyr::filter(p.adjust < 0.1 & ID == "HALLMARK_TNFA_SIGNALING_VIA_NFKB") %>%
+  dplyr::select(curated_clusters, core_enrichment) %>%
+  mutate(core_enrichment = str_split(core_enrichment, "\\/")) %>%
+  unnest() %>%
+  group_by(curated_clusters) %>%
+  summarise(core_enrichment = list(core_enrichment)) %>%
+  deframe()
+
+pairs <- names(LE_graph) %>%
+  combn(2, simplify = T)
+
+jaccard_values <- pairs %>%
+  apply(2, function(pair, graph) {
+    
+    set1 <- graph[[pair[1]]]
+    set2 <- graph[[pair[2]]]
+    
+    jaccard(set1, set2)
+  }, graph = LE_graph)
+
+
+jaccard_table <- rbind(pairs, jaccard_values) %>%
+  t() %>%
+  as_tibble() %>%
+  setNames(c("LE1", "LE2", "j_index")) %>%
+  mutate(j_index = as.numeric(j_index))
+
+ggplot(jaccard_table, aes(j_index)) +
+  geom_density()
+
+jaccard_table %>%
+  igraph::graph.data.frame(directed = FALSE) %>%
+  igraph::get.adjacency(attr = "j_index", sparse = FALSE) %>%
+  Heatmap()
+
+
+LE_graph <- jaccard_table %>%
+  dplyr::filter(j_index!= 0) %>%
+  as_tbl_graph(directed = FALSE) %>%
+  activate("nodes") %>%
+  mutate(curated_clusters = as.numeric(gsub("^.*\\.", "", name))) %>%
+  left_join(cluster_labels_table)
+
+LE_sim <- LE_graph %>%
+  activate(nodes) %>%
+  mutate(group = as.factor(group_louvain(weights = j_index))) %>%
+  ggraph(layout = 'stress', weights = j_index) + 
+  ggforce::geom_mark_hull(aes(x = x,y = y, fill = group)) +
+  geom_edge_link(aes(alpha = j_index), size = 0.1) + 
+  geom_node_label(aes(label = cell_type, color = coarse_clusters)) +
+  scale_color_manual(values = palette_master) +
+  guides(color = guide_legend(override.aes = list(label = "|", fontface = "bold", angle = "90")))
+  
+
+
+
+pbmc_deg_figs[["LE_sim"]] <- LE_sim
+
+```
+
+
+
+
+# TNF producers
+
+
+```{r, fig.width=5, fig.asp = 1}
+
+meta_table <- readRDS("./results/PBMC/clustering/master_seurat_curated_types_table_harmony_iterative_batch_emulsion.rds") %>%
+  mutate(treatment = ifelse(grepl("6", treatment), "t6M","t0M"),
+         curated_clusters = unclass(as.factor(curated_clusters)))
+
+
+
+meta_table <- readRDS("./results/PBMC/clustering/master_seurat_coarse_types_table_harmony_iterative_batch_emulsion.rds") %>%
+  dplyr::select(matches("coarse|cell\\.id")) %>%
+  right_join(meta_table)
+  
+
+
+best_UMAP <- readRDS("results/PBMC/clustering/best_UMAP.rds")
+
+
+nebula_results$curated_clusters.33 <- nebula_cluster33
+
+
+
+nebula_results %>%
+  enframe("cluster", "results") %>%
+  mutate(results = purrr::map(
+    results,
+    ~ .x %>%
+      dplyr::filter(grepl("S100A", gene)) %>%
+      dplyr::select(matches("Posterior|^fdr|^gene"))
+  )) %>%
+  unnest() %>%
+  mutate(curated_clusters = gsub("^.*\\.", "", cluster)) %>%
+  left_join(cluster_labels_table %>% mutate(curated_clusters = as.character(curated_clusters))) %>%
+  group_by(gene) %>%
+  mutate(curated_clusters = ifelse(str_length(curated_clusters) == 1, paste(" ", curated_clusters), curated_clusters)) %>%
+  nest() %>%
+  mutate(
+    plots = purrr::map2(
+      data,
+      gene,
+      ~ ggplot(.x,
+        aes(PosteriorMean, reorder(paste(fine_clusters ,curated_clusters), PosteriorMean), color = fdr_treatmentt6M < 0.1)
+      ) +
+        geom_errorbarh(
+          aes(xmin = PosteriorMean - PosteriorSD, xmax = PosteriorMean + PosteriorSD)
+        ) +
+        geom_point() +
+        theme_mrl() +
+        theme(axis.title.y = element_blank(),
+              legend.position = "none") +
+        geom_vline(xintercept = 0) +
+        facet_grid(coarse_clusters ~ ., space = "free", scales = "free_y") +
+        labs(x = "logFC mean estimate +/- SE", title = .y) +
+        scale_color_manual(values = c("black", "red"))
+    )
+  ) %>% 
+  pull(plots)
+
+
+
+TNF_producers <- nebula_results %>%
+  enframe("cluster", "results") %>%
+  mutate(results = purrr::map(
+    results,
+    ~ .x %>%
+      dplyr::filter(grepl("TNF$", gene)) %>%
+      dplyr::select(matches("Posterior|^fdr|^gene|^avg_"))
+  )) %>%
+  unnest() %>%
+  mutate(curated_clusters = as.numeric(gsub("^.*\\.", "", cluster))) %>%
+  left_join(cluster_labels_table) %>%
+  group_by(gene) %>%
+  #mutate(curated_clusters = ifelse(str_length(curated_clusters) == 1, paste(" ", curated_clusters), curated_clusters)) %>%
+  nest() %>%
+  mutate(
+    plots = purrr::map2(
+      data,
+      gene,
+      ~ ggplot(.x,
+        aes(avg_expr, PosteriorMean, color = fdr_treatmentt6M < 0.1)
+      ) +
+        geom_errorbar(
+          aes(ymin = PosteriorMean - PosteriorSD, 
+              ymax = PosteriorMean + PosteriorSD)
+        ) +
+        #geom_label(aes(label = curated_clusters)) +
+        geom_label_repel(data = dplyr::filter(.x, fdr_treatmentt6M < 0.1), 
+                         aes(label = fine_clusters),
+                         ylim = c(0.4, Inf),
+                         #xlim = c(log10(0.1), Inf),
+                         nudge_x = 0.03) +
+        geom_point() +
+        theme_mrl() +
+        theme(legend.position = "none") +
+        geom_hline(yintercept = 0) +
+        labs(y = "logFC mean estimate", title = .y) +
+        scale_color_manual(values = c("black", "red")) +
+        scale_x_log10()
+    )
+  ) %>% 
+  pull(plots)
+
+
+
+TNF_producers
+
+pbmc_deg_figs[["TNF_producers"]] <- TNF_producers
+
+
+
+```
+
+
+# Build initial manuscript figures
+
+```{r}
+library(patchwork)
+
+
+DGE_fig_main <- (pbmc_deg_figs$MAplot + theme(aspect.ratio = 1/1.69, plot.margin = margin(1,1,0,1))) / plot_spacer() /
+  (pbmc_deg_figs$CD16monoGSEA + theme(aspect.ratio = 1.5) + (pbmc_deg_figs$CSFvsBLup / pbmc_deg_figs$CSFvsBLdn)) + plot_layout(heights = c(4,-2,6))
+
+saveRDS(DGE_fig_main, "figs/DGE_fig_main.rds")
+
+
+ggsave2("figs/pbmc_dge.pdf", DGE_fig_main, width = 7, height = 10)
+
+
+
+
+GSEA_fig_main <- wrap_elements(pbmc_deg_figs$hmGSEA) / plot_spacer() /
+  (pbmc_deg_figs$LE_sim + pbmc_deg_figs$TNF_producers) + 
+  plot_layout(heights = c(22,-2,14))
+
+
+
+ggsave2("figs/pbmc_gsea.pdf", GSEA_fig_main, width = 12, height = 12)
+```
+
+
+

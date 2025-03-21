@@ -1,0 +1,1579 @@
+---
+title: "CSF_Ocrevus_MSandHA_integrated_QC"
+author: "Jessica Wei"
+date: "10/24/2021"
+output: pdf_document
+---
+
+
+
+```{r setup, include=FALSE}
+
+library(magrittr)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(tinytex)
+library(harmony)
+library(presto)
+library(devtools)
+library(celldex)
+library(SingleR)
+
+#QC libraries
+library(gridExtra)
+library(knitr)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(stringr)
+library(ggplot2)
+library(ggExtra)
+library(stats)
+library(hdf5r)
+library(xlsx)
+library(pheatmap)
+
+#library(RColorBrewer)
+library(viridis)
+library(scales)
+library(ggrepel)
+library(circlize)
+library(RColorBrewer)
+library(gplots)
+library(cowplot)
+library(gtable)
+library(data.table)
+library(ggsci)
+
+#save already knitted chunks
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache.lazy= FALSE, fig.pos = 'H')
+knitr::opts_chunk$set(dev = 'png', dpi = 300, out.width = "80%" )
+#Caching option when tweaking the knitting
+knitr::opts_chunk$set(cache = T)
+```
+
+
+## Set up Seurat Object
+
+
+
+
+
+```{r}
+
+MS1089_0M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1089_Baseline_CSF/filtered_feature_bc_matrix/")
+MS1089_0M_CSF <- CreateSeuratObject(counts= MS1089_0M_CSF.data, project="MS1089_0M_CSF", min.cells=3, min.features=200)
+#MS1054_0M[["Batch"]] <- "1"
+#view(MS1054_0M@meta.data)
+
+MS1089_12M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1089_12M_CSF/filtered_feature_bc_matrix/")
+MS1089_12M_CSF <- CreateSeuratObject(counts= MS1089_12M_CSF.data, project="MS1089_12M_CSF", min.cells=3, min.features=200)
+#MS1054_6M[["Batch"]] <- "1"
+#view(MS1054_6M@meta.data)
+
+MS1131_0M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1131_Baseline_CSF/filtered_feature_bc_matrix/")
+MS1131_0M_CSF <- CreateSeuratObject(counts= MS1131_0M_CSF.data, project="MS1131_0M_CSF", min.cells=3, min.features=200)
+
+MS1131_18M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1131_18M_CSF/filtered_feature_bc_matrix/")
+MS1131_18M_CSF <- CreateSeuratObject(counts= MS1131_18M_CSF.data, project="MS1131_18M_CSF", min.cells=3, min.features=200)
+
+MS1201_0M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1201_Rituxan_Baseline_CSF_PP/filtered_feature_bc_matrix/")
+MS1201_0M_CSF <- CreateSeuratObject(counts= MS1201_0M_CSF.data, project="MS1201_0M_CSF", min.cells=3, min.features=200)
+
+MS1201_6M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1201_Rituxan_6M_CSF/filtered_feature_bc_matrix/")
+MS1201_6M_CSF <- CreateSeuratObject(counts= MS1201_6M_CSF.data, project="MS1201_6M_CSF", min.cells=3, min.features=200)
+
+MS1171_0M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1171_Baseline_CSF/filtered_feature_bc_matrix/")
+MS1171_0M_CSF <- CreateSeuratObject(counts= MS1171_0M_CSF.data, project="MS1171_0M_CSF", min.cells=3, min.features=200)
+
+MS1171_12M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1171_12M_CSF/filtered_feature_bc_matrix/")
+MS1171_12M_CSF <- CreateSeuratObject(counts= MS1171_12M_CSF.data, project="MS1171_12M_CSF", min.cells=3, min.features=200)
+
+MS1228_0M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1228_Baseline_CSF/filtered_feature_bc_matrix/")
+MS1228_0M_CSF <- CreateSeuratObject(counts= MS1228_0M_CSF.data, project="MS1228_0M_CSF", min.cells=3, min.features=200)
+
+MS1228_6M_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/MS1228_6M_CSF/filtered_feature_bc_matrix/")
+MS1228_6M_CSF <- CreateSeuratObject(counts= MS1228_6M_CSF.data, project="MS1228_6M_CSF", min.cells=3, min.features=200)
+
+##Healthy donor set up
+HA5876_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/HA5876_CSF/filtered_feature_bc_matrix/")
+HA5876_CSF <- CreateSeuratObject(counts= HA5876_CSF.data, project="HA5876_CSF", min.cells=3, min.features=200)
+
+HA5877_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/HA5877_CSF/filtered_feature_bc_matrix/")
+HA5877_CSF <- CreateSeuratObject(counts= HA5877_CSF.data, project="HA5877_CSF", min.cells=3, min.features=200)
+
+HA5894_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/HA5894_CSF/filtered_feature_bc_matrix/")
+HA5894_CSF <- CreateSeuratObject(counts= HA5894_CSF.data, project="HA5894_CSF", min.cells=3, min.features=200)
+
+HA5952_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/HA5952_CSF/filtered_feature_bc_matrix/")
+HA5952_CSF <- CreateSeuratObject(counts= HA5952_CSF.data, project="HA5952_CSF", min.cells=3, min.features=200)
+
+## This donor has 7000+ cells!!!
+HA5953_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/HA5953_CSF/filtered_feature_bc_matrix/")
+HA5953_CSF <- CreateSeuratObject(counts= HA5953_CSF.data, project="HA5953_CSF", min.cells=3, min.features=200)
+
+HA5957_CSF.data <- Read10X(data.dir="CSF_with_matched_blood_cellranger_outputs/CSF/HA5957_CSF/filtered_feature_bc_matrix/")
+HA5957_CSF <- CreateSeuratObject(counts= HA5957_CSF.data, project="HA5957_CSF", min.cells=3, min.features=200)
+
+```
+
+
+
+
+## Pre-QC processing
+
+```{r pre-QC processing}
+
+MS1089_0M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1089_0M_CSF, pattern = "^MT-")
+#head(MS1054_0M@meta.data,5)
+#MS1089_0M_CSF.data [c("CD3D", "CD8A", "CD4"), 1:30]
+
+MS1089_12M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1089_12M_CSF, pattern = "^MT-")
+
+MS1131_0M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1131_0M_CSF, pattern = "^MT-")
+
+MS1131_18M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1131_18M_CSF, pattern = "^MT-")
+
+MS1201_0M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1201_0M_CSF, pattern = "^MT-")
+
+MS1201_6M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1201_6M_CSF, pattern = "^MT-")
+
+MS1171_0M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1171_0M_CSF, pattern = "^MT-")
+
+MS1171_12M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1171_12M_CSF, pattern = "^MT-")
+
+MS1228_0M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1228_0M_CSF, pattern = "^MT-")
+
+MS1228_6M_CSF[["percent.mt"]] <- PercentageFeatureSet(MS1228_6M_CSF, pattern = "^MT-")
+
+HA5876_CSF[["percent.mt"]] <- PercentageFeatureSet(HA5876_CSF, pattern = "^MT-")
+
+HA5877_CSF[["percent.mt"]] <- PercentageFeatureSet(HA5877_CSF, pattern = "^MT-")
+
+HA5894_CSF[["percent.mt"]] <- PercentageFeatureSet(HA5894_CSF, pattern = "^MT-")
+
+HA5952_CSF[["percent.mt"]] <- PercentageFeatureSet(HA5952_CSF, pattern = "^MT-")
+
+HA5953_CSF[["percent.mt"]] <- PercentageFeatureSet(HA5953_CSF, pattern = "^MT-")
+
+HA5957_CSF[["percent.mt"]] <- PercentageFeatureSet(HA5957_CSF, pattern = "^MT-")
+
+```
+
+
+```{r}
+## Set up PP QC ggplot theme
+
+theme_mrl <- function(x = 1) {
+  theme_minimal() +
+    theme(
+      axis.line = element_line(),
+      axis.ticks.x = element_line(),
+      axis.ticks.y = element_line(),
+      axis.text.x = element_text(size = 12*x,face = "bold", angle = 45, vjust = 0.6),
+      axis.text.y = element_text(size = 12*x,face = "bold"),
+      axis.title.x = element_text(size = 12*x,face = "bold"),
+      axis.title.y = element_text(size = 12*x,face = "bold"),
+      strip.background = element_rect(fill="gray20", colour="gray20", linetype="solid"),
+      strip.text = element_text(size=14*x, colour="white", face="bold"),
+      legend.title = element_text(size=14*x, face = "bold"),
+      legend.text = element_text(size=12*x, color="gray20", face="bold"),
+      legend.background = element_rect(fill = "transparent", colour = "transparent"),
+      plot.title =  element_text(hjust=0.5, vjust=2, face="bold"),
+      plot.subtitle = element_text(hjust=0.5, vjust=3, face="italic"),
+      plot.caption = element_text(hjust = 0, face = "italic")
+    )
+}
+```
+
+
+## Set up PP's runSeuratQC function for QC plots
+
+
+```{r set up PP runSeuratQC plot function}
+
+runSeuratQC <- function(seuratObject, count, feature, mt, label = "") {
+  seuratObject <- AddMetaData(seuratObject, 
+                              PercentageFeatureSet(seuratObject, pattern = "^MT-"), 
+                              col.name = "percent.mt")
+  plot1 <- FeatureScatter(seuratObject, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + 
+    scale_x_continuous(trans = "log10") +
+    scale_y_continuous(trans = "log10") +
+    scale_color_viridis(discrete = T) +
+    theme(legend.position = "none") +
+    stat_density_2d(aes(fill = stat(level)), geom = "polygon") +
+    scale_fill_viridis_c() +
+    annotation_logticks() +
+    geom_vline(xintercept =  count, linetype="dotted", color = "red") +
+    geom_hline(yintercept =  feature, linetype="dotted", color = "red")
+  plot2 <- FeatureScatter(seuratObject, feature1 = "nCount_RNA", feature2 = "percent.mt") + 
+    scale_x_continuous(trans = "log10") +
+    scale_color_viridis(discrete = T) +
+    theme(legend.position = "none") +
+    stat_density_2d(aes(fill = stat(level)), geom = "polygon") +
+    scale_fill_viridis_c() +
+    annotation_logticks(sides = "b") +
+    geom_vline(xintercept = count, linetype="dotted", color = "red") +
+    geom_hline(yintercept =  mt, linetype="dotted", color = "red")
+  plot <-plot_grid(ggMarginal(plot1, type = "violin"), 
+                   ggMarginal(plot2, type = "violin"), 
+                   axis = "tblr",
+                   labels = label,
+                   hjust = 0)
+  SubParam <- seuratObject$nCount_RNA > count[1] & seuratObject$nCount_RNA < count[2] &
+    seuratObject$nFeature_RNA > feature[1] & seuratObject$nFeature_RNA < feature[2] &
+    seuratObject$percent.mt < mt
+  return(list(seuratObject[,SubParam], plot))
+}
+
+```
+
+
+## PP QC plots
+
+
+```{r PP QC function, fig.asp= 0.75}
+folder.path <- "CSF_with_matched_blood_cellranger_outputs/CSF/"
+samples <- list.files(folder.path)
+
+#Import expression matrix as a list of seurat objects
+seurat_raw <- lapply(samples, function(x) {
+  folder.path <- paste0(folder.path, x, "/filtered_feature_bc_matrix")
+  Seurat_object <- CreateSeuratObject(Read10X(data.dir = folder.path))
+  return(Seurat_object)
+})
+
+#name list elements with sample names/ replacing name of each element and delete HHT string
+names(seurat_raw) <- gsub("_HHT_cellranger","", samples)
+
+#store names for later 
+sample_names <- names(seurat_raw)
+
+QC_cutoffs <- list(
+  "MS1089_Baseline_CSF" = list(c(2200,12000), c(1000,3000), 8),
+  "MS1089_12M_CSF" = list(c(2100,10000), c(800,2800), 7),
+  "MS1131_Baseline_CSF" = list(c(2300,13000), c(800,3300), 8),
+  "MS1131_18M_CSF" = list(c(1800,8000), c(800,2100), 8),
+  "MS1201_Rituxan_Baseline_CSF_PP" = list(c(2000,15000), c(1000,3600), 6),
+  "MS1201_Rituxan_6M_CSF" = list(c(1000,8000), c(500,2500), 6),
+  "MS1228_Baseline_CSF" = list(c(1100,8000), c(600,2500), 9),
+  "MS1228_6M_CSF" = list(c(1400,10000), c(800,3200), 6),
+  "MS1171_Baseline_CSF" = list(c(2200,15000), c(1000,3300), 8),
+  "MS1171_12M_CSF" = list(c(1900,13000), c(800,3000), 5),
+  "HA5876_CSF" = list(c(1800,9000), c(800,2500), 8),
+  "HA5877_CSF" = list(c(1900,12000), c(800,3000), 8),
+  "HA5894_CSF" = list(c(2000,8000), c(800,2500), 7),
+  "HA5952_CSF" = list(c(2000,8000), c(800,2400), 8),
+  "HA5953_CSF" = list(c(1900,9000), c(800,2500), 9),
+  "HA5957_CSF" = list(c(1900,8000), c(800,2500), 9))
+
+# Run Seurat QC
+seurat_QC <- lapply(names(seurat_raw), function(x) {
+  cutoffs <- QC_cutoffs[[x]]
+  print(x)
+  print(cutoffs)
+  seurat_raw[[x]]
+  Seurat_object_qc <- runSeuratQC(seurat_raw[[x]], cutoffs[[1]], cutoffs[[2]], cutoffs[[3]], x)
+})
+
+
+
+#for loop
+seurat_QC <- list()
+  for(x in names(seurat_raw)) {
+  cutoffs <- QC_cutoffs[[x]]
+  print(x)
+  print(cutoffs)
+  seurat_raw[[x]]
+  Seurat_object_qc <- runSeuratQC(seurat_raw[[x]], cutoffs[[1]], cutoffs[[2]], cutoffs[[3]], x)
+  seurat_QC[[x]] <- Seurat_object_qc
+  print(Seurat_object_qc[[2]])
+}
+  
+```
+
+
+
+
+```{r nFeature and mt cut-offs set by Seurat and PP QC plots}
+
+MS1089_0M_CSF <- subset(MS1089_0M_CSF, subset = nCount_RNA > 2200 & nCount_RNA < 12000 & nFeature_RNA > 1000 & nFeature_RNA < 3000 & percent.mt < 8)
+MS1089_12M_CSF <- subset(MS1089_12M_CSF, subset = nCount_RNA > 2100 & nCount_RNA < 10000 & nFeature_RNA > 800 & nFeature_RNA < 2800 & percent.mt < 7)
+
+MS1131_0M_CSF <- subset(MS1131_0M_CSF, subset = nCount_RNA > 2300 & nCount_RNA < 13000 & nFeature_RNA > 800 & nFeature_RNA < 2100 & percent.mt < 8)
+MS1131_18M_CSF <- subset(MS1131_18M_CSF, subset = nCount_RNA > 1800 & nCount_RNA < 8000 & nFeature_RNA > 800 & nFeature_RNA < 2100 & percent.mt < 8)
+
+MS1201_0M_CSF <- subset(MS1201_0M_CSF, subset = nCount_RNA > 2000 & nCount_RNA < 15000 & nFeature_RNA > 1000 & nFeature_RNA < 3600 & percent.mt < 6)
+MS1201_6M_CSF <- subset(MS1201_6M_CSF, subset = nCount_RNA > 1000 & nCount_RNA < 8000 & nFeature_RNA > 500 & nFeature_RNA < 2500 & percent.mt < 6)
+
+MS1171_0M_CSF <- subset(MS1171_0M_CSF, subset = nCount_RNA > 2200 & nCount_RNA < 15000 & nFeature_RNA > 1000 & nFeature_RNA < 3300 & percent.mt < 8)
+MS1171_12M_CSF <- subset(MS1171_12M_CSF, subset = nCount_RNA > 1900 & nCount_RNA < 13000 & nFeature_RNA > 800 & nFeature_RNA < 3000 & percent.mt < 5)
+
+MS1228_0M_CSF <- subset(MS1228_0M_CSF, subset = nCount_RNA > 1100 & nCount_RNA < 8000 & nFeature_RNA > 600 & nFeature_RNA < 2500 & percent.mt < 9)
+MS1228_6M_CSF <- subset(MS1228_6M_CSF, subset = nCount_RNA > 1400 & nCount_RNA < 10000 & nFeature_RNA > 800 & nFeature_RNA < 3200 & percent.mt < 6)
+
+HA5876_CSF <- subset(HA5876_CSF, subset = nCount_RNA > 1800 & nCount_RNA < 9000 & nFeature_RNA > 800 & nFeature_RNA < 2500 & percent.mt < 8)
+
+HA5877_CSF <- subset(HA5877_CSF, subset = nCount_RNA > 1900 & nCount_RNA < 12000 & nFeature_RNA > 800 & nFeature_RNA < 3000 & percent.mt < 8)
+
+HA5894_CSF <- subset(HA5894_CSF, subset = nCount_RNA > 2000 & nCount_RNA < 8000 & nFeature_RNA > 800 & nFeature_RNA < 2500 & percent.mt < 7)
+
+HA5952_CSF <- subset(HA5952_CSF, subset = nCount_RNA > 2000 & nCount_RNA < 8000 & nFeature_RNA > 800 & nFeature_RNA < 2400 & percent.mt < 8)
+
+HA5953_CSF <- subset(HA5953_CSF, subset = nCount_RNA > 1900 & nCount_RNA < 9000 & nFeature_RNA > 800 & nFeature_RNA < 2500 & percent.mt < 9)
+
+HA5957_CSF <- subset(HA5957_CSF, subset = nCount_RNA > 1900 & nCount_RNA < 8000 & nFeature_RNA > 800 & nFeature_RNA < 2500 & percent.mt < 9)
+```
+
+
+## Merge and normalize
+
+
+```{r merge and normalize}
+
+merged.CSF <- merge(MS1089_0M_CSF, y = c(MS1089_12M_CSF, MS1131_0M_CSF, MS1131_18M_CSF, MS1201_0M_CSF, MS1201_6M_CSF, MS1171_0M_CSF, MS1171_12M_CSF, MS1228_0M_CSF, MS1228_6M_CSF, HA5876_CSF, HA5877_CSF, HA5894_CSF, HA5952_CSF, HA5953_CSF, HA5957_CSF), add.cell.ids = c("MS1089_0M_CSF", "MS1089_12M_CSF", "MS1131_0M_CSF", "MS1131_18M_CSF", "MS1201_0M_CSF", "MS1201_6M_CSF", "MS1171_0M_CSF", "MS1171_12M_CSF","MS1228_0M_CSF", "MS1228_6M_CSF", "HA5876_CSF", "HA5877_CSF", "HA5894_CSF", "HA5952_CSF", "HA5953_CSF", "HA5957_CSF"), project = "CSFmerged")
+
+merged.CSF <- NormalizeData(merged.CSF, normalization.method = "LogNormalize", scale.factor = 10000)
+
+```
+
+
+## Top variable genes
+
+
+```{r check variable features, fig.asp= .75}
+
+merged.CSF <- FindVariableFeatures(merged.CSF, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(merged.CSF), 10)
+
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(merged.CSF)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+plot1 
+cat("\n\n")
+plot2
+cat("\n\n")
+```
+
+## Scale and run PCA
+
+
+```{r scale and PCA, echo= F, fig.asp=.75}
+
+# Scale data and plot PCA
+merged.CSF <- ScaleData(merged.CSF, features = VariableFeatures(object = merged.CSF))
+merged.CSF <- RunPCA(merged.CSF, features = VariableFeatures(object = merged.CSF))
+
+# Examine and visualize PCA results a few different ways
+print(merged.CSF[["pca"]], dims = 1:5, nfeatures = 5)
+
+summary(as.data.frame(merged.CSF@reductions$pca@cell.embeddings))
+
+
+pca.meta <- merged.CSF@reductions$pca@cell.embeddings %>% 
+  as.data.frame() %>%
+  tibble::rownames_to_column("cell.id") %>%
+  left_join(merged.CSF@meta.data %>% tibble::rownames_to_column("cell.id"), by = "cell.id") 
+summary(pca.meta)
+
+p2 <- ElbowPlot(merged.CSF, ndims =50) + labs(caption = "Variance explained by each PC")
+
+#Tracy Widom test for signficance of each PC
+tw.stat <- merged.CSF@reductions$pca@stdev
+tw.stat <- AssocTests::tw(tw.stat^2, length(tw.stat))$statistic
+p3 <- as.data.frame(tw.stat) %>%
+  tibble::rownames_to_column("TW") %>%
+  mutate(PC = as.numeric(sub("TW","",TW))) %>%
+  ggplot(aes(PC, tw.stat)) +
+  geom_point() +
+  geom_hline(yintercept = 3.2724, linetype = "dotted") +
+  geom_hline(yintercept = 0.9793, linetype = "dotted") +
+  geom_text(aes(50,3.2724,label = "p=0.001", vjust = -0.5, hjust = 1)) +
+  geom_text(aes(50,0.9793,label = "p=0.05", vjust = -0.5, hjust = 1)) +
+  geom_text(aes(label = PC, vjust = -1), check_overlap = T) +
+  labs(y = "Tracy Widom statistic", caption = "Tracy Widom test")
+
+# PC loadings
+p5 <- VizDimLoadings(merged.CSF, dims = c(1), reduction = "pca") + labs(caption = "loadings for first PC") + theme(axis.text.y = element_text(size=6), axis.text.x = element_text(size=6))
+
+
+p6 <- VizDimLoadings(merged.CSF, dims = c(2), reduction = "pca") + labs(caption = "loadings for 2nd PC") + theme(axis.text.y = element_text(size=6), axis.text.x = element_text(size=6))
+
+
+p7 <- VizDimLoadings(merged.CSF, dims = c(3), reduction = "pca") + labs(caption = "loadings for 3rd PC") + theme(axis.text.y = element_text(size=6), axis.text.x = element_text(size=6))
+
+
+p8 <- VizDimLoadings(merged.CSF, dims = c(4), reduction = "pca") + labs(caption = "loadings for 4th PC") + theme(axis.text.y = element_text(size=6), axis.text.x = element_text(size=6))
+
+
+plot_grid(p2, p3)
+cat("\n\n")
+
+plot_grid(p5, p6)
+cat("\n\n")
+
+plot_grid(p7, p8)
+cat("\n\n")
+
+ggsave("results/CSF_analysis/reductions/CSF_PCA_metrics.pdf", plot_grid(p2,p3,p5,p6,p7,p8,ncol = 2), width = 10, height = 14)
+
+```
+
+
+## Batch correction with Harmony
+
+
+```{r run batch correction with Harmony}
+
+meta <- merged.CSF@meta.data %>% tibble::rownames_to_column("cell.id") %>%
+tidyr::separate(cell.id, into = c("patient", "treatment"), sep= "_", remove = F) %>%
+mutate(Emulsion = paste(patient, treatment, sep = "_")) %>%
+tibble::column_to_rownames("cell.id")
+
+merged.CSF@meta.data <- meta
+
+merged.CSF <- RunHarmony(merged.CSF, group.by.vars = "Emulsion")
+
+saveRDS(merged.CSF, file = "results/CSF_analysis/seurat_objects/merged.CSF_harmony_corrected.rds")
+
+```
+
+
+## Cluster resolution 0.3
+
+
+```{r cluster resolution 0.3}
+
+merged.CSF <- RunUMAP(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindNeighbors(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindClusters(merged.CSF, reduction = "harmony", resolution = 0.3)
+
+DimPlot(merged.CSF, reduction = "umap")
+```
+
+
+## Cluster resolution 0.4
+
+```{r cluster resolution 0.4}
+
+merged.CSF <- RunUMAP(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindNeighbors(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindClusters(merged.CSF, reduction = "harmony", resolution = 0.4)
+
+DimPlot(merged.CSF, reduction = "umap")
+
+```
+
+
+## Cluster resolution 0.5
+
+
+```{r cluster resolution 0.5}
+
+merged.CSF <- RunUMAP(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindNeighbors(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindClusters(merged.CSF, resolution = 0.5)
+
+DimPlot(merged.CSF, reduction = "umap")
+```
+
+
+## Cluster resolution 0.6
+
+
+```{r cluster resolution 0.6}
+
+merged.CSF <- RunUMAP(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindNeighbors(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindClusters(merged.CSF, resolution = 0.6)
+
+DimPlot(merged.CSF, reduction = "umap")
+```
+
+
+## Cluster resolution 0.8
+
+
+```{r cluster resolution 0.8}
+
+merged.CSF <- RunUMAP(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindNeighbors(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindClusters(merged.CSF, resolution = 0.8)
+
+DimPlot(merged.CSF, reduction = "umap")
+```
+
+
+### Modularity optimization
+
+
+```{r how many clusters to run}
+
+merged.CSF <-  FindClusters(
+  object = merged.CSF,
+  reduction.type = "harmony",
+  resolution = c(0.4, 0.5, 0.6, 0.8, 1, 1.2),
+  dims.use = 1:30,
+  save.SNN = TRUE
+)
+
+```
+
+
+## add columns to specify baseline or followup LP
+
+
+
+```{r}
+
+# create follow-up vs baseline LP column in data
+#merged.CSF$Donor_Type <- ifelse(grepl("^HA", merged.CSF@meta.data$patient), "Healthy", "MS")
+
+# create follow-up vs baseline LP, and healthy vs MS columns in meta.data
+meta.data <- merged.CSF@meta.data %>%
+tibble::rownames_to_column("cell.id")
+
+meta.data <- meta.data %>%
+mutate(Donor_Type = ifelse(grepl("MS", patient), "MS", "Healthy")) %>%
+mutate(LP = ifelse(grepl("0M", treatment) , "Baseline", "Follow_up"))%>%
+mutate(LP = ifelse(Donor_Type== "Healthy", "Healthy", LP))
+
+
+
+merged.CSF@meta.data <- meta.data %>% 
+tibble::column_to_rownames("cell.id")
+
+# create column with cell type+ LP timepoint
+#merged.CSF$celltype_LP <- paste(merged.CSF$SingleR.cluster.labels.stringent, merged.CSF$LP, sep= "_")
+
+## cluster resolution at 0.5 looks the best, will use for downstream analyses
+merged.CSF <- RunUMAP(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindNeighbors(merged.CSF, reduction = "harmony", dims = 1:30)
+merged.CSF <- FindClusters(merged.CSF, resolution = 0.5) #16 total clusters
+
+# dimplot by LP
+DimPlot(merged.CSF, reduction = "umap", split.by = "LP")
+
+#dimplot with cluster labels
+final.cluster.ids <- c("CD4_1", "CD4_2", "CD8_1", "CD8_2", "CD4_3", "CD4_4", "Treg", "NK", "B cell_1", "DC_1","Mø", "gd T", "Monocytes", "pDC", "B cell_2", "DC_2", "DC_3")
+
+names(final.cluster.ids) <- levels(merged.CSF)
+merged.CSF <- RenameIdents(merged.CSF, final.cluster.ids)
+merged.CSF$cluster_label <- Idents(merged.CSF)
+pdf("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/UMAP_of_all_clusters.pdf")
+DimPlot(merged.CSF, reduction = "umap", label = TRUE, pt.size = 0.5, repel = TRUE) + NoLegend() + labs(title= "CSF")
+dev.off()
+
+saveRDS(merged.CSF, file = "results/CSF_analysis/seurat_objects/merged.CSF_integrated_harmony_corrected_cluster.rds")
+
+
+```
+
+cluster assignment: JW / SingleR 
+
+0- CD4_1 /Th1/Th17 cells
+1- CD4_2/ Th1 cells
+2- CD8_1/ Effector memory CD8 T cells
+3- CD8_2/ Central memory CD8 T cells
+4- CD4_3/ Th1/Th17 cells
+5- CD4_4/ Th1/Th17 cells
+6- Treg/ T regulatory cells
+7- NK/ Natural killer cells
+8- B cell_1/ Exhausted B cells
+9- DC_1/ Myeloid dendritic cells
+10- Macrophages - for sure CD14+ TREM2+ CD68+ / mDC
+11- gd T cell/ Vd2 gd T cells
+12- Monocytes/ Classical monocytes
+13- pDC/ Plasmacytoid dendritic cells
+14- B cell_2 - for sure CD3-/ CCR7-/ IG+/ CD8
+15- DC_2/ Myeloid dendritic cells
+16- DC_3/ Myeloid dendritic cells
+
+
+##Azimuth annotation
+
+
+```{r}
+
+library(Seurat)
+library(Azimuth)
+library(SeuratData)
+library(patchwork)
+
+InstallData("pbmcsca")
+pbmcsca <- LoadData("pbmcsca")
+
+pbmcsca <- RunAzimuth(merged.CSF, reference = "pbmcref")
+
+a1 <- DimPlot(pbmcsca, group.by = "predicted.celltype.l2", label = TRUE, repel=TRUE, label.size = 3)+ NoLegend()
+
+table(pbmcsca$predicted.celltype.l2)
+
+pbmcsca_df <- as.data.frame(pbmcsca@meta.data)
+
+pbmcsca_cluster_df <- pbmcsca_df[, c("seurat_clusters", "predicted.celltype.l2")]
+
+pheatmap(pbmcsca_cluster_df$predicted.celltype.l2, color = inferno(10))
+
+
+```
+
+Azimuth assignment
+0- CD4 TCM
+1- CD4 TCM
+2- CD4 TEM
+3- CD8 TEM
+4- CD4 TCM
+5- CD4 TCM
+6- CD4 TCM
+7- ILC
+8- B memory
+9- cDC2
+10- CD14/CD16 mono
+11- MAIT/ gd T
+12- mono
+13- pDC
+14- plasmablast/ CD14 mono
+15- cDC1
+16- cDC1/ mono
+
+## read in rds file with cluster assignment added
+
+
+```{r}
+
+## previous chunk does not have cluster assignment, in separate DGE file
+## read rds with cluster_label back to do QC
+
+merged.CSF <- readRDS("results/CSF_analysis/seurat_objects/merged.CSF_integrated_harmony_corrected_cluster.rds")
+
+
+```
+
+
+## Make new table of harmony and UMAP reductions
+
+
+```{r}
+
+###merge pca/ harmony reductions in one table
+pca.meta <- merged.CSF@reductions$harmony@cell.embeddings %>% 
+  as.data.frame() %>%
+  tibble::rownames_to_column("cell.id")
+umap.meta <- merged.CSF@reductions$umap@cell.embeddings %>% 
+  as.data.frame() %>%
+  tibble::rownames_to_column("cell.id")
+reductions.meta <- pca.meta %>%
+  left_join(umap.meta, by = "cell.id") %>%
+  left_join(merged.CSF@meta.data %>% tibble::rownames_to_column("cell.id"), by = "cell.id")
+
+
+```
+
+
+
+
+
+## Harmony PC combos
+
+```{r}
+
+
+
+data <- reductions.meta %>%
+  separate(cell.id, sep= "_", c("patient", "timepoint", "barcode")) %>%
+  mutate(emulsion= paste(patient, timepoint, sep = "_"))
+
+#view(data)
+
+```
+
+
+
+```{r}
+
+###vizualize harmony PCs
+pcplot_1 <- ggplot(data, aes(harmony_1, harmony_2)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+pcplot_2 <- ggplot(data, aes(harmony_1, harmony_3)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+pcplot_3 <- ggplot(data, aes(harmony_1, harmony_4)) +
+  geom_point(size=0.1, alpha=0.1) + 
+  geom_density2d()
+
+pcplot_4 <- ggplot(data, aes(harmony_1, harmony_5)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+pcplot_5 <- ggplot(data, aes(harmony_2, harmony_3)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+pcplot_6 <- ggplot(data, aes(harmony_2, harmony_4)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+pcplot_7 <- ggplot(data, aes(harmony_2, harmony_5)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+pcplot_8 <- ggplot(data, aes(harmony_3, harmony_4)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+pcplot_9 <- ggplot(data, aes(harmony_3, harmony_5)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+pcplot_10 <- ggplot(data, aes(harmony_4, harmony_5)) +
+  geom_point(size=0.1, alpha=0.1)+
+   geom_density2d()
+
+png("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/harmony_pc_plots.png")
+plot_grid(pcplot_1, pcplot_2,pcplot_3, pcplot_4, pcplot_5, pcplot_6, pcplot_7, pcplot_8, pcplot_9, pcplot_10)
+dev.off()
+
+```
+
+
+## Harmony vs nCount and nFeature
+
+
+```{r}
+
+###harmony vs nCount and nFeature
+
+harmony1_nCount <- ggplot(data, aes(x=nCount_RNA, y=harmony_1)) +
+  geom_point(size=0.1, alpha=0.1)
+
+harmony1_nFeature <- ggplot(data, aes(x=nFeature_RNA, y=harmony_1)) +
+  geom_point(size=0.1, alpha=0.1)
+
+harmony2_nCount <- ggplot(data, aes(x=nCount_RNA, y=harmony_2)) +
+  geom_point(size=0.1, alpha=0.1)
+
+harmony2_nFeature <- ggplot(data, aes(x=nFeature_RNA, y=harmony_2)) +
+  geom_point(size=0.1, alpha=0.1)
+
+harmony3_nCount <- ggplot(data, aes(x=nCount_RNA, y=harmony_3)) +
+  geom_point(size=0.1, alpha=0.1)
+
+harmony3_nFeature <- ggplot(data, aes(x=nFeature_RNA, y=harmony_3)) +
+  geom_point(size=0.1, alpha=0.1)
+
+harmony4_nCount <- ggplot(data, aes(x=nCount_RNA, y=harmony_4)) +
+  geom_point(size=0.1, alpha=0.1)
+
+harmony4_nFeature <- ggplot(data, aes(x=nFeature_RNA, y=harmony_4)) +
+  geom_point(size=0.1, alpha=0.1)
+
+png("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/harmony_nCount_plots.png")
+plot_grid(harmony1_nCount, harmony1_nFeature, harmony2_nCount, harmony2_nFeature, harmony3_nCount, harmony3_nFeature, harmony4_nCount, harmony4_nFeature)
+dev.off()
+
+```
+
+
+## What clusters are in positive/negative harmony space?
+
+
+```{r}
+
+###plot negative harmony dots
+
+data <- data %>%
+  mutate(low_harmony_1 = harmony_1 < -25)
+
+low_harmony_1_UMAP <- ggplot(data, aes(UMAP_1, UMAP_2, color = low_harmony_1)) +
+  geom_point(size=0.1, alpha=0.1)+
+  guides(colour = guide_legend(override.aes = list(size=10)))
+
+#ggplot(data, aes(UMAP_1, UMAP_2, color = low_harmony_1)) +
+#  geom_point(size=0.1, alpha=0.1) +
+#  guides(colour = guide_legend(override.aes = list(size=10)))
+
+data <- data %>%
+  mutate(positive_harmony_2 = harmony_2 > 5)
+
+positive_harmony_2_UMAP <- ggplot(data, aes(UMAP_1, UMAP_2, color = positive_harmony_2)) +
+  geom_point(size=0.1, alpha=0.1)+
+  guides(colour = guide_legend(override.aes = list(size=10)))
+
+#ggplot(data, aes(UMAP_1, UMAP_2, color = low_harmony_2)) +
+#  geom_point(size=0.1, alpha=0.1) +
+#  guides(colour = guide_legend(override.aes = list(size=10)))
+
+#data <- data %>%
+#  mutate(low_harmony_3 = harmony_3 < -10)
+
+#low_harmony_3_UMAP <- ggplot(data, aes(UMAP_1, UMAP_2, color = low_harmony_3)) +
+#  geom_point(size=0.1, alpha=0.1)+
+#  guides(colour = guide_legend(override.aes = list(size=10)))
+
+data <- data %>%
+  mutate(positive_harmony_4 = harmony_4 > 25)
+
+positive_harmony_4_UMAP <- ggplot(data, aes(UMAP_1, UMAP_2, color = positive_harmony_4)) +
+  geom_point(size=0.1, alpha=0.1)+
+  guides(colour = guide_legend(override.aes = list(size=10)))
+
+png("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/harmony_low_vs_high_cells_plots.png")
+plot_grid(low_harmony_1_UMAP, positive_harmony_2_UMAP, positive_harmony_4_UMAP, ncol=2)
+dev.off()
+
+```
+Cells in low harmony 1 space are mostly Mø
+Cells in positive harmony 2 space mostly B cell_1
+
+## harmony vs umap
+
+```{r}
+###harmony vs umap
+
+umap1_harmony1 <- ggplot(data, aes(x= UMAP_1, y= harmony_1, fill= emulsion, color= emulsion)) +
+  geom_point(size=1, alpha=0.1)+
+  guides(colour = guide_legend(override.aes = list(size=5, alpha=1)))
+
+umap2_harmony1 <- ggplot(data, aes(x= UMAP_2, y= harmony_1, fill= emulsion, color= emulsion)) +
+  geom_point(size=1, alpha=0.1)+
+  guides(colour = guide_legend(override.aes = list(size=5, alpha=1)))
+
+umap1_harmony2 <- ggplot(data, aes(x= UMAP_1, y= harmony_2, fill= emulsion, color= emulsion)) +
+  geom_point(size=1, alpha=0.1)+
+  guides(colour = guide_legend(override.aes = list(size=5, alpha=1)))
+
+umap2_harmony2 <- ggplot(data, aes(x= UMAP_2, y= harmony_2, fill= emulsion, color= emulsion)) +
+  geom_point(size=1, alpha=0.1)+
+  guides(colour = guide_legend(override.aes = list(size=5, alpha=1)))
+
+png("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/harmony_vs_UMAP_plots.png")
+plot_grid(umap1_harmony1, umap2_harmony1, umap1_harmony2, umap2_harmony2)
+dev.off()
+```
+
+
+## UMAP colored by LP and emulsion
+
+```{r, fig.asp= .75}
+
+pdf("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/UMAP_LP_vs_emulsion_plots.pdf")
+ggplot(data, aes(x = UMAP_1, y = UMAP_2, fill= emulsion, color=emulsion)) +
+         geom_point(size= 0.4, alpha = 0.7) +
+         scale_color_viridis_d(option="inferno")+
+         guides(colour = guide_legend(override.aes = list(size=8, alpha=5)))
+
+cat("\n\n")
+
+ggplot(data, aes(x = UMAP_1, y = UMAP_2, fill= LP, color=LP)) +
+  geom_point(size= 0.4, alpha = 0.5) +
+  scale_color_viridis_d(option="viridis")+
+  guides(colour = guide_legend(override.aes = list(size=5, alpha=1)))
+
+cat("\n\n")
+
+dev.off()
+```
+B cell_1 cluster mostly in MS
+
+## Bar plot of each emulsion vs. treatment
+
+```{r, fig.asp= .75}
+
+### box plot for each emulsion vs treatment
+
+emulsion_timepoint_1 <- ggplot(data, aes(x=timepoint, y=harmony_1, fill= emulsion))+
+  geom_boxplot(outlier.size = 0.5)+
+  NoLegend()
+
+emulsion_timepoint_2 <- ggplot(data, aes(x=timepoint, y=harmony_2, fill= emulsion))+
+  geom_boxplot(outlier.size = 0.5)+
+  NoLegend()
+
+emulsion_timepoint_3 <- ggplot(data, aes(x=timepoint, y=harmony_3, fill= emulsion))+
+  geom_boxplot(outlier.size = 0.5)+
+  NoLegend()
+
+emulsion_timepoint_4 <- ggplot(data, aes(x=timepoint, y=harmony_4, fill= emulsion))+
+  geom_boxplot(outlier.size = 0.5)+
+  NoLegend()
+
+emulsion_timepoint_5 <- ggplot(data, aes(x=timepoint, y=harmony_5, fill= emulsion))+
+  geom_boxplot(outlier.size = 0.5)
+
+pdf("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/timepoint_vs_emulsion_bar_plots.pdf")
+emulsion_timepoint_1
+cat("\n\n")
+emulsion_timepoint_2
+cat("\n\n")
+emulsion_timepoint_3
+cat("\n\n")
+emulsion_timepoint_4
+cat("\n\n")
+emulsion_timepoint_5
+cat("\n\n")
+dev.off
+
+```
+
+
+## Emulsion vs Harmony
+
+
+```{r}
+
+### emulsion vs harmony
+
+emulsion1 <- ggplot(data, aes(emulsion, harmony_1))+
+  geom_violin()+
+  coord_flip()
+
+emulsion2 <- ggplot(data, aes(emulsion, harmony_2))+
+  geom_violin()+
+  coord_flip()
+
+emulsion3 <- ggplot(data, aes(emulsion, harmony_3))+
+  geom_violin()+
+  coord_flip()
+
+emulsion4 <- ggplot(data, aes(emulsion, harmony_4))+
+  geom_violin()+
+  coord_flip()
+
+emulsion5 <- ggplot(data, aes(emulsion, harmony_5))+
+  geom_violin()+
+  coord_flip()
+
+pdf("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/harmony_vs_emulsion_plots.pdf")
+plot_grid(emulsion1, emulsion2, emulsion3, emulsion4, emulsion5)
+dev.off()
+
+```
+
+
+## Facet clusters
+
+
+```{r}
+
+pdf("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/UMAP_cluster_facet.pdf")
+ggplot(data, aes(UMAP_1, UMAP_2, col= seurat_clusters, label=TRUE))+
+  geom_point(size=0.3, alpha=0.3) +
+  facet_wrap(.~seurat_clusters)
+
+dev.off()
+
+```
+
+
+## Number of all cells from all samples HD, MS baseline, MS follow up in each cluster
+
+```{r}
+
+###how many cells in each cluster
+
+cluster_cell_count <- data %>%
+  group_by(seurat_clusters) %>%
+  summarize(cluster_cell_count= n())
+
+## add cluster ids
+final.cluster.id <- c("CD4_1", "CD4_2", "CD8_1", "CD8_2", "CD4_3", "CD4_4", "Treg", "NK", "B cell_1", "DC_1","Mø", "gd T", "Monocytes", "pDC", "B cell_2", "DC_2", "DC_3")
+
+cluster_cell_count$final_cluster_id <- final.cluster.id
+
+cluster_cell_count <- cluster_cell_count %>%
+                         remove_rownames() %>%
+                         tibble::column_to_rownames(var="final_cluster_id")
+
+
+
+
+pdf("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/all_sample_total_cellcount_per_cluster_plot.pdf")
+ggplot(cluster_cell_count, aes(final.cluster.id, cluster_cell_count))+
+  geom_bar(stat = "identity")+coord_flip()
+
+dev.off()
+
+```
+
+
+## nCount nFeature and percent.mt in clusters
+
+
+```{r}
+
+###nCount nFeature and percent mt in clusters
+
+cluster_nCount_plot <- ggplot(data, aes(seurat_clusters, nCount_RNA))+
+  geom_violin()+
+  scale_y_log10()
+
+cluster_nFeature_plot <- ggplot(data, aes(seurat_clusters, nFeature_RNA))+
+  geom_violin()+
+  scale_y_log10()
+
+cluster_mt_plot <- ggplot(data, aes(seurat_clusters, percent.mt))+
+  geom_violin()
+
+png("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/nCount_nFeat_mt_per_cluster_plot.png")
+plot_grid(cluster_nCount_plot, cluster_nFeature_plot, cluster_mt_plot)
+dev.off()
+
+```
+
+
+## nCount nFeature and percent.mt per emulsion
+
+
+```{r}
+
+###nCount nFeature and percent mt in emulsion
+
+emulsion_nCount_plot <- ggplot(data, aes(Emulsion, nCount_RNA))+
+  geom_violin()+
+  scale_y_log10()+
+  coord_flip()
+
+emulsion_nFeature_plot <- ggplot(data, aes(Emulsion, nFeature_RNA))+
+  geom_violin()+
+  scale_y_log10()+
+  coord_flip()
+
+emulsion_mt_plot <- ggplot(data, aes(Emulsion, percent.mt))+
+  geom_violin()+
+  coord_flip()
+
+png("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/nCount_nFeat_mt_per_emulsion_plot.png")
+plot_grid(emulsion_nCount_plot, emulsion_nFeature_plot, emulsion_mt_plot)
+dev.off()
+
+```
+
+
+## emulsion count/frequency per cluster
+
+```{r, fig.asp=.75}
+
+### emulsion count and frequency by cluster
+
+emulsion_count <- ggplot(data, aes(seurat_clusters, fill= emulsion, group = emulsion))+
+  geom_bar()
+  
+
+emulsion_count_log <- ggplot(data, aes(seurat_clusters, fill= emulsion, group = emulsion))+
+  geom_bar()+
+  scale_y_log10()+
+  NoLegend()
+
+freq <- data %>%
+  group_by(emulsion, seurat_clusters) %>%
+  summarize(freq= n())  %>%
+  ungroup() %>%
+  group_by(seurat_clusters) %>%
+  mutate(total= sum(freq)) %>%
+  mutate(frequency= freq/ total)
+
+emulsion_frequency <- ggplot(freq, aes(seurat_clusters, frequency, fill= emulsion, group = emulsion))+
+  geom_bar(stat= "identity")+
+  theme(legend.key.size = unit(0.2, 'cm'))
+
+plot_grid(emulsion_count_log, 
+          emulsion_frequency+ 
+          theme(legend.position = "none"), 
+          get_legend(emulsion_frequency), 
+          nrow = 1, 
+          rel_widths = c(1, 1, 0.5))
+
+pdf("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/emulsion_count_freq_per_cluster_plot.pdf")
+
+emulsion_count
+cat("n\n")
+emulsion_count_log
+cat("n\n")
+emulsion_frequency
+
+dev.off()
+
+```
+
+
+##cluster frequency by timepoint for Mo and B cells
+
+```{r}
+
+Mø_freq <- subset(freq, seurat_clusters =="10")
+Bcell_1_freq <- subset(freq, seurat_clusters == "8")
+Bcell_2_freq <- subset(freq, seurat_clusters == "14")
+
+ggplot(Mø_freq, aes(emulsion, frequency, group= emulsion, fill=emulsion))+
+ geom_col()+
+ coord_flip()+
+  ggtitle(label = "Mø frequency of each emulsion within cluster")
+
+#freq= cell count in each cluster per emulsion
+ggplot(Mø_freq, aes(emulsion, freq, group= emulsion, fill=emulsion))+
+ geom_col()+
+ coord_flip()+
+ ggtitle(label = "Mø absolute cell count per emulsion")
+
+ggplot(Bcell_1_freq, aes(emulsion, frequency, group= emulsion, fill=emulsion))+
+ geom_col()+
+ coord_flip()
+
+ggplot(Bcell_1_freq, aes(emulsion, freq, group= emulsion, fill=emulsion))+
+ geom_col()+
+ coord_flip()
+
+ggplot(Bcell_2_freq, aes(emulsion, frequency, group= emulsion, fill=emulsion))+
+ geom_col()+
+ coord_flip()
+
+ggplot(Bcell_2_freq, aes(emulsion, freq, group= emulsion, fill=emulsion))+
+ geom_col()+
+ coord_flip()
+
+pdf("results/CSF_analysis/QC/merged.CSF_all_cells_all_clusters/emulsion_count_freq_per_cluster_plot.pdf")
+
+```
+
+
+## Baseline vs Followup count and frequency per cluster- emulsion not accounted for
+
+```{r, fig.asp=.75}
+### cluster vs timepoint
+
+#data <- data[-c(75,76)]
+
+cluster_baselineORfollowup_plot <- ggplot(data, aes(seurat_clusters, group= LP, fill= LP))+
+  geom_bar()+
+  scale_fill_manual(values=c("#E69F00", "#56B4E9", "#999999"))
+
+
+# baseline vs followup frequency 
+cell_count <- data %>%
+  group_by(LP, seurat_clusters) %>%
+  summarize(cell_count= n())  %>%
+  ungroup() %>%
+  group_by(seurat_clusters) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+
+frequency_baselineORfollowup <- ggplot(cell_count, aes(seurat_clusters, frequency, fill= LP, group = LP))+
+  geom_bar(stat= "identity")+
+  scale_fill_manual(values=c("#E69F00", "#56B4E9", "#999999"))
+
+#insert seurat cluster label column into cell_count df
+cluster_label <- factor(c("CD4_1", "CD4_2", "CD8_1", "CD8_2", "CD4_3", "CD4_4", "Treg", "NK", "B cell_1", "DC_1","Mø", "gd T", "Monocytes", "pDC", "B cell_2", "DC_2", "DC_3"))
+
+
+frequency_baselineORfollowup_notstacked <- ggplot(cell_count, 
+                                        aes(seurat_clusters, frequency, fill= LP, group = LP)) +                                                  geom_bar(position="dodge", stat="identity")+
+                                  scale_fill_manual(values=c("#E69F00", "#56B4E9", "#999999"))+
+                         facet_wrap(cluster_label[seurat_clusters]~., scales = 'free_x')+
+                        theme(strip.text = element_text(size = 14), 
+                              legend.text = element_text(size= 14),
+                              legend.title = element_text(size= 14))
+
+cluster_baselineORfollowup_patient <- ggplot(data, aes(seurat_clusters, group= patient, fill= patient))+
+  geom_bar()
+
+plot_grid(cluster_baselineORfollowup_plot, frequency_baselineORfollowup)
+cat("\n\n")
+frequency_baselineORfollowup_notstacked
+cat("\n\n")
+cluster_baselineORfollowup_patient
+cat("\n\n")
+
+```
+
+
+
+## subset by patient for frequency per cluster
+
+```{r, fig.asp=.75}
+### subsetting by patient for frequency of timepoint per cluster
+
+#MS1089 
+
+MS1089only <- subset(data, patient== "MS1089")
+
+MS1089only_plot <- ggplot(MS1089only, aes(seurat_clusters, group= timepoint, fill=timepoint))+
+  geom_bar()
+
+MS1089_timepoint_freq <- MS1089only %>%
+  group_by(timepoint, seurat_clusters) %>%
+  summarize(cell_count= n())  %>%
+  ungroup() %>%
+  group_by(seurat_clusters) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+
+MS1089_timepoint_freq_plot <-ggplot(MS1089_timepoint_freq, aes(seurat_clusters, y= frequency, group= timepoint, fill=timepoint))+
+  geom_bar(stat = 'identity')+
+  ggtitle("MS1089")+
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"))
+
+#MS1131
+MS1131only <- subset(data, patient== "MS1131")
+
+MS1131_timepoint_freq <- MS1131only %>%
+  group_by(timepoint, seurat_clusters) %>%
+  summarize(cell_count= n())  %>%
+  ungroup() %>%
+  group_by(seurat_clusters) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+
+MS1131_timepoint_freq_plot <-ggplot(MS1131_timepoint_freq, aes(seurat_clusters, y= frequency, group= timepoint, fill=timepoint))+
+  geom_bar(stat = 'identity')+
+  ggtitle("MS1131")+
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"))
+
+#MS1201
+MS1201only <- subset(data, patient== "MS1201")
+
+MS1201_timepoint_freq <- MS1201only %>%
+  group_by(timepoint, seurat_clusters) %>%
+  summarize(cell_count= n())  %>%
+  ungroup() %>%
+  group_by(seurat_clusters) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+
+MS1201_timepoint_freq_plot <-ggplot(MS1201_timepoint_freq, aes(seurat_clusters, y= frequency, group= timepoint, fill=timepoint))+
+  geom_bar(stat = 'identity')+
+  ggtitle("MS1201")+
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"))
+
+#MS1171
+MS1171only <- subset(data, patient== "MS1171")
+
+MS1171_timepoint_freq <- MS1171only %>%
+  group_by(timepoint, seurat_clusters) %>%
+  summarize(cell_count= n())  %>%
+  ungroup() %>%
+  group_by(seurat_clusters) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+
+MS1171_timepoint_freq_plot <-ggplot(MS1171_timepoint_freq, aes(seurat_clusters, y= frequency, group= timepoint, fill=timepoint))+
+  geom_bar(stat = 'identity')+
+  ggtitle("MS1171")+
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"))
+
+#MS1228
+MS1228only <- subset(data, patient== "MS1228")
+
+MS1228_timepoint_freq <- MS1228only %>%
+  group_by(timepoint, seurat_clusters) %>%
+  summarize(cell_count= n())  %>%
+  ungroup() %>%
+  group_by(seurat_clusters) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+
+MS1228_timepoint_freq_plot <- ggplot(MS1228_timepoint_freq, aes(seurat_clusters, y= frequency, group=timepoint, fill= timepoint))+
+  geom_bar(stat = 'identity')+
+  ggtitle("MS1228")+
+  scale_fill_manual(values=c("#E69F00", "#56B4E9"))
+
+
+
+plot_grid(MS1089_timepoint_freq_plot, MS1131_timepoint_freq_plot, MS1201_timepoint_freq_plot, MS1171_timepoint_freq_plot, MS1228_timepoint_freq_plot)
+
+cat("\n\n")
+
+```
+
+
+##count and frequency of cluster per emulsion
+
+```{r}
+
+
+#count of cluster per emulsion
+emulsion_cluster_plot <- ggplot(data, aes(emulsion, fill=seurat_clusters, group = seurat_clusters))+
+  geom_bar()+
+  coord_flip()
+
+
+
+
+
+#freq of clusters per emulsion
+cluster_cell_count <- data %>%
+  group_by(seurat_clusters) %>%
+  summarize(cluster_cell_count= n()) %>%
+  ungroup() %>%
+  mutate(total= sum(cluster_cell_count)) %>%
+  mutate(frequency= cluster_cell_count/ total)
+
+
+cell_count <- data %>%
+  group_by(emulsion, seurat_clusters) %>%
+  summarize(cell_count= n())  %>%
+  ungroup() %>%
+  group_by(emulsion) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+
+#insert seurat cluster label column into cell_count df
+cluster_label <- factor(c("CD4_1", "CD4_2", "CD8_1", "CD8_2", "CD4_3", "CD4_4", "Treg", "NK", "B cell_1", "DC_1","Mø", "gd T", "Monocytes", "pDC", "B cell_2", "DC_2", "DC_3"))
+
+emulsion_cluster_count_notstacked <- ggplot(cell_count, aes(emulsion, cell_count, fill=emulsion, group = emulsion))+
+  geom_bar(position="dodge", stat="identity")+
+                         facet_wrap(cluster_label[seurat_clusters]~., scales = 'free_x')+
+                        coord_flip()+
+                        theme(strip.text = element_text(size = 12), 
+                              legend.text = element_text(size= 12),
+                              legend.title = element_text(size= 12),
+                              axis.text.x = element_text(size=8),
+                              axis.text.y = element_text(size=7))
+
+freq_of_cluster_per_emulsion_plot <- ggplot(cell_count, aes(emulsion, frequency, fill= seurat_clusters, group = seurat_clusters))+
+  geom_bar(stat= "identity")+
+  coord_flip()
+
+emulsion_cluster_plot
+cat("\n\n")
+freq_of_cluster_per_emulsion_plot
+cat("\n\n")
+
+```
+
+
+## frequencies of clusters pre and post treatment connected line graph
+
+```{r, fig.asp= .75}
+
+### MS1089
+
+#add baseline vs followup LP column
+MS1089_timepoint_freq$LP <- ifelse(MS1089_timepoint_freq$timepoint == "0M", "Baseline", "Follow_up")
+
+ggplot(MS1089_timepoint_freq, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line()+
+  geom_point(color= "blue", size= 2)+
+  geom_text(aes(label= as.factor(frequency)),size=2, hjust=0, vjust=0)+
+  ggtitle("MS1089_all clusters")+
+  facet_wrap(~seurat_clusters)
+cat("\n\n")
+
+### MS1131
+MS1131_timepoint_freq$LP <- ifelse(MS1131_timepoint_freq$timepoint == "0M", "Baseline", "Follow_up")
+
+ggplot(MS1131_timepoint_freq, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line()+
+  geom_point(color= "blue", size= 2)+
+  geom_text(aes(label= as.factor(frequency)),size=2, hjust=0, vjust=0)+
+  ggtitle("MS1131_all clusters")+
+  facet_wrap(~seurat_clusters)
+cat("\n\n")
+
+### MS1201
+MS1201_timepoint_freq$LP <- ifelse(MS1201_timepoint_freq$timepoint == "0M", "Baseline", "Follow_up")
+
+ggplot(MS1201_timepoint_freq, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line()+
+  geom_point(color= "blue", size= 2)+
+  geom_text(aes(label= as.factor(frequency)),size=2, hjust=0, vjust=0)+
+  ggtitle("MS1201_all clusters")+
+  facet_wrap(~seurat_clusters)
+cat("\n\n")
+
+### MS1171
+MS1171_timepoint_freq$LP <- ifelse(MS1171_timepoint_freq$timepoint == "0M", "Baseline", "Follow_up")
+
+ggplot(MS1171_timepoint_freq, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line()+
+  geom_point(color= "blue", size= 2)+
+  geom_text(aes(label= as.factor(frequency)),size=2, hjust=0, vjust=0)+
+  ggtitle("MS1171_all clusters")+
+  facet_wrap(~seurat_clusters)
+cat("\n\n")
+
+### MS1228
+MS1228_timepoint_freq$LP <- ifelse(MS1228_timepoint_freq$timepoint == "0M", "Baseline", "Follow_up")
+
+ggplot(MS1228_timepoint_freq, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line()+
+  geom_point(color= "blue", size= 2)+
+  geom_text(aes(label= as.factor(frequency)),size=2, hjust=0, vjust=0)+
+  ggtitle("MS1228_all clusters")+
+  facet_wrap(~seurat_clusters)
+cat("\n\n")
+
+
+all_patients_timepoint_freq_CSF <- data %>%
+  group_by(patient, LP, seurat_clusters) %>%
+  summarize(cell_count= n())  %>%
+  ungroup() %>%
+  group_by(patient, LP) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+cat("\n\n")
+
+
+
+## assign cluster names on individual plots
+all_patients_timepoint_freq_CSF$seurat_clusters <- factor(x = all_patients_timepoint_freq_CSF$seurat_clusters, labels = 
+c("CD4_1", "CD4_2", "CD8_1", "CD8_2", "CD4_3", "CD4_4", "Treg", "NK", "B cell_1", "DC_1","Mø", "gd T", "Monocytes", "pDC", "B cell_2", "DC_2", "DC_3"))
+
+
+all_patients_timepoint_freq_CSF_plot <- ggplot(all_patients_timepoint_freq_CSF, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line(aes(group= patient))+
+  geom_point(color= "cornflowerblue", size= 1.5)+
+  #geom_text(aes(label= patient),size=2.5, hjust=0, vjust=0)+
+  ggtitle("all_patients_all clusters")+
+  facet_wrap(~seurat_clusters)
+
+all_patients_timepoint_freq_CSF_plot
+cat("\n\n")
+
+# ggsave("all_patients_timepoint_freq_CSF.pdf", all_patients_timepoint_freq_CSF_plot, path= "results/plots/")
+
+all_patients_timepoint_freq_CSF_plot_freey <- ggplot(all_patients_timepoint_freq_CSF, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line(aes(group= patient))+
+  geom_point(color= "cornflowerblue", size= 1.5)+
+  #geom_text(aes(label= patient),size=2.5, hjust=0, vjust=0)+
+  ggtitle("all_patients_all clusters")+
+  facet_wrap(~seurat_clusters, scales = 'free')
+
+all_patients_timepoint_freq_CSF_plot_freey
+cat("\n\n")
+
+##subset for just MS baseline and followup
+MS_patients_timepoint_freq_CSF <- all_patients_timepoint_freq_CSF[all_patients_timepoint_freq_CSF$LP %in% c("Baseline", "Follow_up"), ]
+
+
+
+MS_patients_timepoint_freq_CSF_plot <- ggplot(MS_patients_timepoint_freq_CSF, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line(aes(group= patient))+
+  geom_point(color= "cornflowerblue", size= 1.5)+
+  #geom_text(aes(label= patient),size=2.5, hjust=0, vjust=0)+
+  ggtitle("MS_patients_all clusters")+
+  facet_wrap(~seurat_clusters)+
+  scale_y_log10()+
+  theme(strip.text = element_text(size=12),
+        axis.text.x= element_text(size=12),
+        axis.text.y.left = element_text(size=12),
+        axis.title.y = element_text(size=12))
+
+MS_patients_timepoint_freq_CSF_plot_freey <- ggplot(MS_patients_timepoint_freq_CSF, aes(x= factor(LP), y=frequency, group= seurat_clusters))+
+  geom_line(aes(group= patient))+
+  geom_point(color= "cornflowerblue", size= 1.5)+
+  #geom_text(aes(label= patient),size=2.5, hjust=0, vjust=0)+
+  ggtitle("MS_patients_all clusters")+
+  facet_wrap(~seurat_clusters, scales = 'free')
+
+MS_patients_timepoint_freq_CSF_plot
+cat("\n\n")
+MS_patients_timepoint_freq_CSF_plot_freey 
+
+ggsave("MS_patients_timepoint_freq_CSF.pdf", MS_patients_timepoint_freq_CSF_plot, path= "results/CSF_analysis/plots/")
+
+ggsave("MS_patients_timepoint_freq_CSF_freey.pdf", MS_patients_timepoint_freq_CSF_plot_freey, path= "results/CSF_analysis/plots/")
+
+#png("all_patients_timepoint_freq_CSF.png")
+#dev.off()
+### all Decrease at 6M: 
+### all slight decrease at 6M: 
+### all Increase at 6M: Intermediate monocytes
+```
+
+
+##Subset myeloid for # of cells per donor
+
+```{r}
+
+Mø_data <- subset(data, cluster_label== "Mø") #total 1029 cells across all 3
+
+
+data %>%
+  group_by(cluster, donor, LP) %>%
+  summarize(count = n()) %>%
+  ungroup() %>% 
+  group_by(donor, LP) %>% # effectively groups by sample
+  mutate(total_sample = sum(count)) %>%
+  ungroup() %>%
+  mutate(freq = count / total_sample) %>%
+  ggplot(aes(LP, freq)) +
+  geom_point(aes(color = LP)) +
+  geom_line(aes(group = donor)) +
+  facet_wrap(.~cluster, scales = "free", nrow = 2) +
+  theme(axis.text.x = element_blank())
+
+
+
+Mø_cell_count <- data %>%
+  group_by(LP, Emulsion) %>%
+  summarize(cell_count= n()) %>%
+  ungroup() %>%
+  group_by(Emulsion) %>%
+  mutate(total= sum(cell_count)) %>%
+  mutate(frequency= cell_count/ total)
+
+
+Mø_cell_count <- data %>%
+  group_by(LP, Emulsion, patient) %>%
+  summarize(cell_count= n()) %>%
+  ungroup() %>%
+  group_by(LP) %>%
+  count(LP)
+  ungroup() %>%
+  group_by(Emulsion) %>%
+  mutate(total_emulsion = sum(cell_count)) %>%# the total number of cells in each emulsion as a new column variable
+  ungroup() %>%
+  mutate(freq = cell_count / total_emulsion)
+  
+
+  
+
+## Freq plot of all clusters and all timepoints
+data <- data %>%
+  group_by(cluster_label, Emulsion, LP, patient) %>%
+  summarize(count = n()) %>%
+  ungroup() %>% 
+  group_by(Emulsion, LP) %>% # effectively groups by sample
+  mutate(total_sample = sum(count)) %>%
+  ungroup() %>%
+  mutate(freq = count / total_sample) 
+ 
+ 
+ 
+ggplot(data, aes(LP, freq)) +
+  geom_point(aes(color = LP)) +
+  geom_line(aes(group = patient)) +
+  facet_wrap(.~cluster_label, scales = "free", nrow = 2) +
+  theme(axis.text.x = element_blank())
+
+
+```
+
+## number of cells in each condition: Baseline, Followup, Healthy
+
+```{r}
+
+#28493 Baseline
+#15,122 healthy
+#17,089 follow up
+
+ggplot(data, aes(x= LP))+ geom_bar()+ geom_text(stat= 'count', aes(label= ..count..), vjust= -0.5)
+
+
+
+```
+
+
+
+
