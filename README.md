@@ -1,6 +1,6 @@
 # Ocrevus_manuscript
 
-This repository contains the code associated with the manuscript [Transcriptomic profiling after B-cell depletion reveals central and peripheral immune cell changes in multiple sclerosis](https://doi.org/10.1172/JCI182790). Analyzed Seurat objects are available on [figshare](dx.doi.org/10.6084/m9.figshare.28204532)
+This repository contains the code associated with the manuscript [Transcriptomic profiling after B-cell depletion reveals central and peripheral immune cell changes in multiple sclerosis](https://doi.org/10.1172/JCI182790). Analyzed Seurat objects are available on [figshare](https://doi.org/10.6084/m9.figshare.28204532
 
 # Disclaimer
 
